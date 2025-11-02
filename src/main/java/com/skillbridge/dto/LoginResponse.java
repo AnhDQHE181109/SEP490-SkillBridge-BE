@@ -1,4 +1,4 @@
-package com.skillbridge.auth.dto;
+package com.skillbridge.dto;
 
 public class LoginResponse {
     private String userId;
