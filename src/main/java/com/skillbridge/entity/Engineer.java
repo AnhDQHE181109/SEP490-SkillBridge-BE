@@ -3,6 +3,7 @@ package com.skillbridge.entity;
 import jakarta.persistence.*;
 import org.springframework.cglib.core.Local;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -19,7 +20,7 @@ public class Engineer {
     @Column(name = "years_experience")
     private Integer yearsOfExperience;
 
-    @Column(name = "senority", length = 32)
+    @Column(name = "seniority", length = 32)
     private String seniority;
 
     @Column(name = "summary", columnDefinition = "TEXT")
@@ -41,7 +42,7 @@ public class Engineer {
     private String profileImageURL;
 
     @Column(name = "salary_expectation", precision = 10, scale = 2)
-    private Long salaryExpectation;
+    private BigDecimal salaryExpectation;
 
     @Column(name = "primary_skill")
     private String primarySkill;
@@ -49,7 +50,7 @@ public class Engineer {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "update_at")
+    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
     @PrePersist
@@ -143,11 +144,11 @@ public class Engineer {
         this.profileImageURL = profileImageURL;
     }
 
-    public Long getSalaryExpectation() {
+    public BigDecimal getSalaryExpectation() {
         return salaryExpectation;
     }
 
-    public void setSalaryExpectation(Long salaryExpectation) {
+    public void setSalaryExpectation(BigDecimal salaryExpectation) {
         this.salaryExpectation = salaryExpectation;
     }
 
