@@ -12,7 +12,8 @@ public class HomepageController {
 
     @GetMapping("/homepage/statistics")
     public String homepage(){
-
+        // Temporary placeholder response. Replace with real statistics payload when available.
+        return "{}";
     }
 
 }
