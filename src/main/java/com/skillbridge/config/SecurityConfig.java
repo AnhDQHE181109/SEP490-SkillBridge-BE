@@ -24,6 +24,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(authz -> authz
                 // Allow auth endpoints
                 .requestMatchers("/auth/**").permitAll()
+                // Allow demo endpoints
+                .requestMatchers("/demo/**").permitAll()
                 // Allow actuator endpoints
                 .requestMatchers("/actuator/**").permitAll()
                 // Allow public endpoints
