@@ -5,6 +5,7 @@ import com.skillbridge.dto.LoginRequest;
 import com.skillbridge.dto.RegisterRequest;
 import com.skillbridge.entity.User;
 import com.skillbridge.repository.UserRepository;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -14,9 +15,11 @@ import java.util.UUID;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
         
         // Create a test user if not exists
         createTestUserIfNotExists();
@@ -28,7 +31,8 @@ public class UserService {
             testUser.setEmail("admin@skillbridge.com");
             testUser.setFullName("Administrator");
             testUser.setCompanyName("SkillBridge");
-            testUser.setPassword("admin123"); // Set password in database
+            // Hash the password using BCrypt before storing
+            testUser.setPassword(passwordEncoder.encode("admin123"));
             testUser.setRole("ADMIN");
             testUser.setIsActive(true);
             testUser.setCreatedAt(LocalDateTime.now());
@@ -36,7 +40,7 @@ public class UserService {
             
             userRepository.save(testUser);
             
-            System.out.println("Created test user: admin@skillbridge.com / admin123");
+            System.out.println("Created test user: admin@skillbridge.com / admin123 (password hashed with BCrypt)");
         }
     }
 
@@ -50,8 +54,8 @@ public class UserService {
             return null;
         }
         
-        // Check password from database
-        if (user.getPassword() == null || !user.getPassword().equals(req.getPassword())) {
+        // Verify password using BCrypt - compares plain text with hashed password
+        if (user.getPassword() == null || !passwordEncoder.matches(req.getPassword(), user.getPassword())) {
             return null;
         }
         
@@ -76,7 +80,8 @@ public class UserService {
         newUser.setFullName(req.getFullName() != null ? req.getFullName() : req.getEmail());
         newUser.setCompanyName(req.getCompanyName());
         newUser.setPhone(req.getPhone());
-        newUser.setPassword(req.getPassword()); // Store password in database
+        // Hash the password using BCrypt before storing
+        newUser.setPassword(passwordEncoder.encode(req.getPassword()));
         newUser.setRole("CLIENT");
         newUser.setIsActive(true);
         newUser.setCreatedAt(LocalDateTime.now());
