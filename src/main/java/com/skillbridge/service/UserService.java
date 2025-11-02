@@ -8,16 +8,10 @@ import com.skillbridge.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class UserService {
-
-    // Temporary password store since the DB doesn't have password field yet
-    // In a real app, you'd add a password column to the users table
-    private final Map<String, String> passwordStore = new ConcurrentHashMap<>();
 
     private final UserRepository userRepository;
 
@@ -34,13 +28,13 @@ public class UserService {
             testUser.setEmail("admin@skillbridge.com");
             testUser.setFullName("Administrator");
             testUser.setCompanyName("SkillBridge");
+            testUser.setPassword("admin123"); // Set password in database
             testUser.setRole("ADMIN");
             testUser.setIsActive(true);
             testUser.setCreatedAt(LocalDateTime.now());
             testUser.setUpdatedAt(LocalDateTime.now());
             
-            User savedUser = userRepository.save(testUser);
-            passwordStore.put(savedUser.getEmail(), "admin123");
+            userRepository.save(testUser);
             
             System.out.println("Created test user: admin@skillbridge.com / admin123");
         }
@@ -51,14 +45,13 @@ public class UserService {
     }
 
     public LoginResponse login(LoginRequest req) {
-        User user = findByUsername(req.getUsername());
+        User user = findByUsername(req.getEmail());
         if (user == null) {
             return null;
         }
         
-        // Check password from our temporary store
-        String storedPassword = passwordStore.get(user.getEmail());
-        if (storedPassword == null || !storedPassword.equals(req.getPassword())) {
+        // Check password from database
+        if (user.getPassword() == null || !user.getPassword().equals(req.getPassword())) {
             return null;
         }
         
@@ -66,21 +59,24 @@ public class UserService {
         return new LoginResponse(
             String.valueOf(user.getId()), 
             user.getEmail(), 
-            user.getDisplayName(), 
+            user.getFullName(), 
             token
         );
     }
 
     public LoginResponse register(RegisterRequest req) {
         // Check if user already exists
-        if (userRepository.findByEmail(req.getUsername()).isPresent()) {
+        if (userRepository.findByEmail(req.getEmail()).isPresent()) {
             return null;
         }
         
         // Create new user in database
         User newUser = new User();
-        newUser.setEmail(req.getUsername());
-        newUser.setFullName(req.getDisplayName() != null ? req.getDisplayName() : req.getUsername());
+        newUser.setEmail(req.getEmail());
+        newUser.setFullName(req.getFullName() != null ? req.getFullName() : req.getEmail());
+        newUser.setCompanyName(req.getCompanyName());
+        newUser.setPhone(req.getPhone());
+        newUser.setPassword(req.getPassword()); // Store password in database
         newUser.setRole("CLIENT");
         newUser.setIsActive(true);
         newUser.setCreatedAt(LocalDateTime.now());
@@ -88,14 +84,11 @@ public class UserService {
         
         User savedUser = userRepository.save(newUser);
         
-        // Store password temporarily
-        passwordStore.put(savedUser.getEmail(), req.getPassword());
-        
         String token = "token-" + UUID.randomUUID();
         return new LoginResponse(
             String.valueOf(savedUser.getId()), 
             savedUser.getEmail(), 
-            savedUser.getDisplayName(), 
+            savedUser.getFullName(), 
             token
         );
     }

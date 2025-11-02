@@ -35,8 +35,7 @@ public class User {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    // Temporary password field for authentication (not in DB yet)
-    @Transient
+    @Column(name = "password")
     private String password;
 
     public User() {
