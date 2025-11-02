@@ -6,9 +6,9 @@ spring:
     active: dev
   
   datasource:
-    url: jdbc:mysql://localhost:3306/skillbridge_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
-    username: skillbridge_user
-    password: skillbridge_password
+    url: jdbc:mysql://localhost:3307/skillbridge_dev?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: skillbridge_dev
+    password: dev_password123
     driver-class-name: com.mysql.cj.jdbc.Driver
     
   jpa:
