@@ -21,8 +21,8 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
-        if (request == null || request.getUsername() == null || request.getPassword() == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("username and password required");
+        if (request == null || request.getEmail() == null || request.getPassword() == null) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("email and password required");
         }
 
         LoginResponse resp = userService.login(request);
@@ -34,13 +34,13 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
-        if (request == null || request.getUsername() == null || request.getPassword() == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("username, password required");
+        if (request == null || request.getEmail() == null || request.getPassword() == null) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("email and password required");
         }
 
         LoginResponse resp = userService.register(request);
         if (resp == null) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body("username already exists");
+            return ResponseEntity.status(HttpStatus.CONFLICT).body("email already exists");
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(resp);
     }
