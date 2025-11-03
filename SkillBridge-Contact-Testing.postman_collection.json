@@ -1,0 +1,837 @@
+{
+	"info": {
+		"_postman_id": "skillbridge-contact-testing",
+		"name": "SkillBridge Contact System API Testing",
+		"description": "Comprehensive API testing collection for SkillBridge contact system functionality",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "skillbridge-contact-dev"
+	},
+	"item": [
+		{
+			"name": "Health & System Status",
+			"item": [
+				{
+					"name": "Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Health status is UP\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.status).to.eql(\"UP\");",
+									"});",
+									"",
+									"console.log(\"✅ Backend service is healthy and running\");"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/actuator/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"actuator",
+								"health"
+							]
+						},
+						"description": "Check if the backend service is running and healthy before testing contact system"
+					},
+					"response": []
+				},
+				{
+					"name": "System Info",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"console.log(\"System Info Response:\", pm.response.json());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/actuator/info",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"actuator",
+								"info"
+							]
+						},
+						"description": "Get system information and version details"
+					},
+					"response": []
+				}
+			],
+			"description": "System health and status checks before testing contact functionality"
+		},
+		{
+			"name": "Contact System - Valid Submissions",
+			"item": [
+				{
+					"name": "Submit Valid Contact Form",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has success field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('success');",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"pm.test(\"Response has message field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('message');",
+									"    pm.expect(jsonData.message).to.be.a('string');",
+									"});",
+									"",
+									"pm.test(\"Response may have contactId\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.contactId) {",
+									"        pm.expect(jsonData.contactId).to.be.a('number');",
+									"        pm.environment.set('last_contact_id', jsonData.contactId);",
+									"    }",
+									"});",
+									"",
+									"console.log(\"✅ Contact form submitted successfully:\", pm.response.json());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"John Doe\",\n  \"companyName\": \"TechCorp Solutions\",\n  \"phone\": \"+1-555-123-4567\",\n  \"email\": \"john.doe@techcorp.com\",\n  \"title\": \"Looking for skilled Java developers\",\n  \"message\": \"We are seeking experienced Java developers for our upcoming projects. Please contact us to discuss potential collaboration opportunities.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/public/contact/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"public",
+								"contact",
+								"submit"
+							]
+						},
+						"description": "Submit a valid contact form with all required fields properly filled"
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Contact Form - Different Company",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Contact submission successful\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"console.log(\"✅ Second contact form submitted:\", pm.response.json());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Sarah Wilson\",\n  \"companyName\": \"InnovateTech Ltd\",\n  \"phone\": \"+44-20-1234-5678\",\n  \"email\": \"sarah.wilson@innovatetech.co.uk\",\n  \"title\": \"Frontend Developer Recruitment\",\n  \"message\": \"Hello, we are looking for talented frontend developers with React and TypeScript experience. Would love to discuss partnership opportunities.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/public/contact/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"public",
+								"contact",
+								"submit"
+							]
+						},
+						"description": "Submit another valid contact form to test multiple submissions"
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Contact Form - Long Message",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Long message accepted\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"console.log(\"✅ Contact form with long message accepted:\", pm.response.json());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Michael Chen\",\n  \"companyName\": \"Global Enterprises Inc\",\n  \"phone\": \"+1-800-555-9999\",\n  \"email\": \"m.chen@globalenterprises.com\",\n  \"title\": \"Large Scale Development Project\",\n  \"message\": \"We are embarking on a large-scale digital transformation project that requires multiple skilled developers across various technologies. Our project involves building a comprehensive e-commerce platform with microservices architecture, advanced analytics, and mobile applications. We need expertise in Java Spring Boot, React, Node.js, PostgreSQL, Redis, Docker, and Kubernetes. The project timeline is 18 months with potential for long-term partnership. Please contact us to discuss details, team requirements, and engagement models. We are looking for a reliable partner who can scale with our growing needs.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/public/contact/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"public",
+								"contact",
+								"submit"
+							]
+						},
+						"description": "Test contact form submission with a longer message (within 1000 character limit)"
+					},
+					"response": []
+				}
+			],
+			"description": "Test valid contact form submissions with different scenarios"
+		},
+		{
+			"name": "Contact System - Validation Tests",
+			"item": [
+				{
+					"name": "Submit Contact Form - Missing Name",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Error response indicates validation failure\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.false;",
+									"    pm.expect(jsonData.message).to.include('Name is required');",
+									"});",
+									"",
+									"console.log(\"✅ Missing name validation working:\", pm.response.json());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"companyName\": \"Test Company\",\n  \"phone\": \"+1-555-123-4567\",\n  \"email\": \"test@company.com\",\n  \"title\": \"Test Title\",\n  \"message\": \"This is a test message to check validation.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/public/contact/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"public",
+								"contact",
+								"submit"
+							]
+						},
+						"description": "Test validation when name field is missing"
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Contact Form - Invalid Email",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Email validation error\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.false;",
+									"    pm.expect(jsonData.message).to.include('Email must be valid');",
+									"});",
+									"",
+									"console.log(\"✅ Email validation working:\", pm.response.json());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Test User\",\n  \"companyName\": \"Test Company\",\n  \"phone\": \"+1-555-123-4567\",\n  \"email\": \"invalid-email-format\",\n  \"title\": \"Test Title\",\n  \"message\": \"This is a test message with invalid email.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/public/contact/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"public",
+								"contact",
+								"submit"
+							]
+						},
+						"description": "Test email format validation"
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Contact Form - Empty Message",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Message validation error\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.false;",
+									"    pm.expect(jsonData.message).to.include('Message is required');",
+									"});",
+									"",
+									"console.log(\"✅ Empty message validation working:\", pm.response.json());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Test User\",\n  \"companyName\": \"Test Company\",\n  \"phone\": \"+1-555-123-4567\",\n  \"email\": \"test@company.com\",\n  \"title\": \"Test Title\",\n  \"message\": \"\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/public/contact/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"public",
+								"contact",
+								"submit"
+							]
+						},
+						"description": "Test validation when message is empty"
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Contact Form - Message Too Short",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Message length validation error\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.false;",
+									"    pm.expect(jsonData.message).to.include('Message must be between 10 and 1000 characters');",
+									"});",
+									"",
+									"console.log(\"✅ Message length validation working:\", pm.response.json());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Test User\",\n  \"companyName\": \"Test Company\",\n  \"phone\": \"+1-555-123-4567\",\n  \"email\": \"test@company.com\",\n  \"title\": \"Test Title\",\n  \"message\": \"Short\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/public/contact/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"public",
+								"contact",
+								"submit"
+							]
+						},
+						"description": "Test validation when message is too short (less than 10 characters)"
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Contact Form - All Fields Missing",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Multiple validation errors\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.false;",
+									"    pm.expect(jsonData.message).to.include('Validation failed');",
+									"});",
+									"",
+									"console.log(\"✅ Multiple field validation working:\", pm.response.json());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{base_url}}/public/contact/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"public",
+								"contact",
+								"submit"
+							]
+						},
+						"description": "Test validation when all required fields are missing"
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Contact Form - Name Too Short",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Name length validation error\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.false;",
+									"    pm.expect(jsonData.message).to.include('Name must be between 2 and 100 characters');",
+									"});",
+									"",
+									"console.log(\"✅ Name length validation working:\", pm.response.json());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"A\",\n  \"companyName\": \"Test Company\",\n  \"phone\": \"+1-555-123-4567\",\n  \"email\": \"test@company.com\",\n  \"title\": \"Test Title\",\n  \"message\": \"This is a valid test message for validation.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/public/contact/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"public",
+								"contact",
+								"submit"
+							]
+						},
+						"description": "Test validation when name is too short (less than 2 characters)"
+					},
+					"response": []
+				}
+			],
+			"description": "Test various validation scenarios for contact form fields"
+		},
+		{
+			"name": "Contact System - Edge Cases",
+			"item": [
+				{
+					"name": "Submit Contact Form - Special Characters",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Special characters handled properly\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"console.log(\"✅ Special characters handled:\", pm.response.json());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"José María García-López\",\n  \"companyName\": \"Tech & Innovation Co. (España)\",\n  \"phone\": \"+34-91-123-4567\",\n  \"email\": \"jose.garcia@techinnovation.es\",\n  \"title\": \"Colaboración técnica & desarrollo\",\n  \"message\": \"Hola! Estamos interesados en colaborar con desarrolladores especializados en Java & Spring Boot. Nuestro presupuesto es €50,000-€100,000. ¿Podrían contactarnos?\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/public/contact/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"public",
+								"contact",
+								"submit"
+							]
+						},
+						"description": "Test contact form with special characters, accents, and non-English content"
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Contact Form - Very Long Valid Message",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Long message within limits accepted\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"console.log(\"✅ Long message within limits accepted:\", pm.response.json());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Alexandra Thompson\",\n  \"companyName\": \"Enterprise Solutions Group\",\n  \"phone\": \"+1-555-999-8888\",\n  \"email\": \"alexandra.thompson@esg-solutions.com\",\n  \"title\": \"Comprehensive Development Partnership Inquiry\",\n  \"message\": \"Dear SkillBridge Team, We are reaching out to explore a comprehensive development partnership for our upcoming digital transformation initiative. Our company is embarking on a multi-phase project that will require diverse technical expertise across several domains. Phase 1 involves modernizing our legacy systems using Java Spring Boot microservices architecture. Phase 2 focuses on developing responsive web applications using React and TypeScript. Phase 3 will implement mobile applications for iOS and Android platforms. We are particularly interested in your team's expertise in cloud deployment using AWS services, including EC2, RDS, S3, and Lambda functions. Our timeline is flexible, and we are looking for a long-term partnership that can scale with our growing technical needs. Please contact us to schedule a detailed discussion about project scope, timeline, and engagement models.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/public/contact/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"public",
+								"contact",
+								"submit"
+							]
+						},
+						"description": "Test contact form with a message close to the 1000 character limit"
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Contact Form - Malformed JSON",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"console.log(\"✅ Malformed JSON handled properly:\", pm.response.text());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Test User\",\n  \"companyName\": \"Test Company\"\n  \"phone\": \"+1-555-123-4567\"\n  \"email\": \"test@company.com\",\n  \"title\": \"Test Title\",\n  \"message\": \"This JSON is missing commas and should fail\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/public/contact/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"public",
+								"contact",
+								"submit"
+							]
+						},
+						"description": "Test how the system handles malformed JSON requests"
+					},
+					"response": []
+				}
+			],
+			"description": "Test edge cases and boundary conditions for contact form"
+		},
+		{
+			"name": "Contact System - Performance Tests",
+			"item": [
+				{
+					"name": "Submit Multiple Contact Forms Rapidly",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Generate unique email for this test",
+									"var timestamp = Date.now();",
+									"var randomNum = Math.floor(Math.random() * 1000);",
+									"pm.environment.set('unique_email', 'perf.test.' + timestamp + '.' + randomNum + '@example.com');",
+									"pm.environment.set('unique_name', 'Performance Test User ' + randomNum);"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Response time is acceptable\", function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(5000);",
+									"});",
+									"",
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Contact submission successful\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"console.log(\"✅ Performance test completed in:\", pm.response.responseTime + 'ms');"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"{{unique_name}}\",\n  \"companyName\": \"Performance Testing Corp\",\n  \"phone\": \"+1-555-PERF-TEST\",\n  \"email\": \"{{unique_email}}\",\n  \"title\": \"Performance Test Submission\",\n  \"message\": \"This is an automated performance test submission to ensure the contact system can handle multiple requests efficiently.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/public/contact/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"public",
+								"contact",
+								"submit"
+							]
+						},
+						"description": "Performance test with unique data generation. Run this multiple times to test system load."
+					},
+					"response": []
+				}
+			],
+			"description": "Performance and load testing for contact system"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global pre-request script",
+					"console.log('🚀 Starting API test for:', pm.info.requestName);",
+					"console.log('📍 Endpoint:', pm.request.url.toString());",
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global test script",
+					"console.log('⏱️  Response time:', pm.response.responseTime + 'ms');",
+					"console.log('📊 Response size:', pm.response.responseSize + ' bytes');",
+					"console.log('✅ Test completed for:', pm.info.requestName);",
+					"console.log('---');"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8080/api",
+			"type": "string",
+			"description": "Base URL for the SkillBridge API"
+		},
+		{
+			"key": "last_contact_id",
+			"value": "",
+			"type": "string",
+			"description": "ID of the last submitted contact form"
+		},
+		{
+			"key": "unique_email",
+			"value": "",
+			"type": "string",
+			"description": "Generated unique email for testing"
+		},
+		{
+			"key": "unique_name",
+			"value": "",
+			"type": "string",
+			"description": "Generated unique name for testing"
+		}
+	]
+}
