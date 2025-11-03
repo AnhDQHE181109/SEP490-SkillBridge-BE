@@ -1,5 +1,6 @@
 package com.skillbridge.controller;
 
+import com.skillbridge.dto.EngineerProfileDTO;
 import com.skillbridge.dto.HomepageStatisticsDTO;
 import com.skillbridge.entity.Engineer;
 import com.skillbridge.service.HomepageService;
@@ -27,8 +28,10 @@ public class HomepageController {
         return new ResponseEntity<>(homepageStatisticsDTO, HttpStatus.OK);
     }
 
-    public ResponseEntity<List<Engineer>> getEngineersList() {
-
+    @GetMapping("/homepage/engineers")
+    public ResponseEntity<List<EngineerProfileDTO>> getEngineersList() {
+        List<EngineerProfileDTO> engineersList = homepageService.getAllCategoryEngineers();
+        return new ResponseEntity<>(engineersList, HttpStatus.OK);
     }
 
 }
