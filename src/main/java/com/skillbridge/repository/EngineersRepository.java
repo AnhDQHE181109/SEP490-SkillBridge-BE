@@ -14,17 +14,14 @@ import java.util.List;
 @Repository
 public interface EngineersRepository extends JpaRepository<Engineer, Integer> {
 
-//    /*
-//     This method returns the number of engineers by their statuses
-//     */
+    /*
+     This method returns the number of engineers by their statuses
+     */
+    Long countEngineersByStatus(String status);
+
 //    @Query("select count(status) as Count_of_available_engineers\n" +
-//            "from engineers\n" +
-//            "where status = :status")
-//    Integer countEngineersByStatus(@Param("status") String status);
-//
-//    @Query("select count(status) as Count_of_available_engineers\n" +
-//            "from engineers\n" +
-//            "where status = 'AVAILABLE'")
+//            "from engineers e\n" +
+//            "where e.status = 'AVAILABLE'")
 //    List<Engineer> findFeaturedEngineers();
 
 }
