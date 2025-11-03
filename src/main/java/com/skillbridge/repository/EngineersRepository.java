@@ -24,5 +24,51 @@ public interface EngineersRepository extends JpaRepository<Engineer, Integer> {
 //            "where e.status = 'AVAILABLE'")
 //    List<Engineer> findFeaturedEngineers();
 
+    /**
+     * Find engineers by category based on primary skill
+     */
+    @Query("SELECT e FROM Engineer e WHERE e.status = 'AVAILABLE' " +
+            "AND (LOWER(e.primarySkill) LIKE LOWER(CONCAT('%', :category, '%')) " +
+            "OR LOWER(e.summary) LIKE LOWER(CONCAT('%', :category, '%')))")
+    List<Engineer> findByCategory(@Param("category") String category);
+
+    /**
+     * Find web development engineers
+     */
+    @Query("SELECT e FROM Engineer e WHERE e.status = 'AVAILABLE' " +
+            "AND (LOWER(e.primarySkill) LIKE '%web%' " +
+            "OR LOWER(e.primarySkill) LIKE '%frontend%' " +
+            "OR LOWER(e.primarySkill) LIKE '%backend%' " +
+            "OR LOWER(e.primarySkill) LIKE '%react%' " +
+            "OR LOWER(e.primarySkill) LIKE '%angular%' " +
+            "OR LOWER(e.primarySkill) LIKE '%vue%') " +
+            "ORDER BY e.createdAt DESC")
+    List<Engineer> findWebDevelopers();
+
+    /**
+     * Find game development engineers
+     */
+    @Query("SELECT e FROM Engineer e WHERE e.status = 'AVAILABLE' " +
+            "AND (LOWER(e.primarySkill) LIKE '%game%' " +
+            "OR LOWER(e.primarySkill) LIKE '%unity%' " +
+            "OR LOWER(e.primarySkill) LIKE '%unreal%' " +
+            "OR LOWER(e.primarySkill) LIKE '%godot%') " +
+            "ORDER BY e.createdAt DESC")
+    List<Engineer> findGameDevelopers();
+
+    /**
+     * Find AI/ML development engineers
+     */
+    @Query("SELECT e FROM Engineer e WHERE e.status = 'AVAILABLE' " +
+            "AND (LOWER(e.primarySkill) LIKE '%ai%' " +
+            "OR LOWER(e.primarySkill) LIKE '%ml%' " +
+            "OR LOWER(e.primarySkill) LIKE '%machine learning%' " +
+            "OR LOWER(e.primarySkill) LIKE '%artificial intelligence%' " +
+            "OR LOWER(e.primarySkill) LIKE '%deep learning%' " +
+            "OR LOWER(e.primarySkill) LIKE '%data science%') " +
+            "ORDER BY e.createdAt DESC")
+    List<Engineer> findAiMlDevelopers();
+
+
 }
 
