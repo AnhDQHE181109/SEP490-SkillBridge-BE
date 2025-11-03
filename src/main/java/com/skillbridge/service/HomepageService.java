@@ -3,6 +3,7 @@ package com.skillbridge.service;
 import com.skillbridge.dto.EngineerProfileDTO;
 import com.skillbridge.dto.HomepageStatisticsDTO;
 import com.skillbridge.entity.Engineer;
+import com.skillbridge.repository.ContactRepository;
 import com.skillbridge.repository.EngineersRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -17,10 +18,14 @@ public class HomepageService {
     @Autowired
     private EngineersRepository engineersRepository;
 
+    @Autowired
+    private ContactRepository contactRepository;
+
     public HomepageStatisticsDTO getHomepageStatistics() {
         Long totalEngineers = engineersRepository.countEngineersByStatus("AVAILABLE");
+        Long totalCustomers = contactRepository.countByStatus("New");
 
-        return new HomepageStatisticsDTO(totalEngineers, 0L);
+        return new HomepageStatisticsDTO(totalEngineers, totalCustomers);
     }
 
     /**
