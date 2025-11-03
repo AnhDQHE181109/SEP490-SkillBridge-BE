@@ -81,7 +81,7 @@ public class ContactService {
             user.setCompanyName(contactData.getCompanyName());
             user.setPhone(contactData.getPhone());
             user.setRole("CLIENT");
-            user.setActive(true);
+            user.setIsActive(true);
             userRepository.save(user);
             return new UserPasswordResult(user, null);
         } else {
@@ -92,7 +92,7 @@ public class ContactService {
             newUser.setCompanyName(contactData.getCompanyName());
             newUser.setPhone(contactData.getPhone());
             newUser.setRole("CLIENT");
-            newUser.setActive(true);
+            newUser.setIsActive(true);
 
             // Generate random password
             String plainPassword = passwordService.generateRandomPassword();
