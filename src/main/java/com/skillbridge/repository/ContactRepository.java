@@ -37,5 +37,12 @@ public interface ContactRepository extends JpaRepository<Contact, Integer> {
      */
     @Query("SELECT c FROM Contact c WHERE c.status = :status ORDER BY c.createdAt DESC")
     List<Contact> findByStatusOrderByCreatedAtDesc(@Param("status") String status);
+
+    /**
+     * Count number of new contacts in the system
+     * @param status Contact status
+     * @return Number of new contacts
+     */
+    Long countByStatus(String status);
 }
 
