@@ -124,8 +124,8 @@ public interface EngineersRepository extends JpaRepository<Engineer, Integer> {
             "and (:primarySkill is null or lower(e.primarySkill) like lower(concat('%', :primarySkill, '%'))) " +
             "and (:experienceMin is null or e.yearsOfExperience >= :experienceMin) " +
             "and (:experienceMax is null or e.yearsOfExperience <= :experienceMax) " +
-            "and (:seniority is null or e.seniority like :seniority) " +
-            "and (:location is null or e.location like :location) " +
+            "and (:seniority is null or e.seniority in :seniority) " +
+            "and (:location is null or e.location in :location) " +
             "and (:salaryMin is null or e.salaryExpectation >= :salaryMin) " +
             "and (:salaryMax is null or e.salaryExpectation <= :salaryMax) " +
             "and (:availability is null or :availability = false or e.status = 'AVAILABLE')")
