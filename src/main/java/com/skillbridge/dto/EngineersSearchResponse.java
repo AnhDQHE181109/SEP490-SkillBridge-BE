@@ -2,7 +2,7 @@ package com.skillbridge.dto;
 
 import java.util.List;
 
-public class EngineerSearchResponse {
+public class EngineersSearchResponse {
 
     private List<EngineerProfileDTO> engineersResults;
     private Long totalResults;
@@ -10,9 +10,9 @@ public class EngineerSearchResponse {
     private Integer totalPages;
     private Integer pageSize;
 
-    public EngineerSearchResponse() {}
+    public EngineersSearchResponse() {}
 
-    public EngineerSearchResponse(List<EngineerProfileDTO> engineersResults, Long totalResults, Integer currentPage, Integer totalPages, Integer pageSize) {
+    public EngineersSearchResponse(List<EngineerProfileDTO> engineersResults, Long totalResults, Integer currentPage, Integer totalPages, Integer pageSize) {
         this.engineersResults = engineersResults;
         this.totalResults = totalResults;
         this.currentPage = currentPage;
