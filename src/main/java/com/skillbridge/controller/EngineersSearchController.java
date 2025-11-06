@@ -1,14 +1,15 @@
 package com.skillbridge.controller;
 
+import com.skillbridge.dto.EngineersSearchResponse;
+import com.skillbridge.dto.SearchCriteria;
+import com.skillbridge.entity.Engineer;
 import com.skillbridge.service.EngineersSearchService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @RestController
@@ -18,6 +19,40 @@ public class EngineersSearchController {
 
     @Autowired
     private EngineersSearchService engineersSearchService;
+
+    @GetMapping("/search")
+    public ResponseEntity<EngineersSearchResponse> searchEngineers(
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) List<String> skills,
+            @RequestParam(required = false) Integer experienceMin,
+            @RequestParam(required = false) Integer experienceMax,
+            @RequestParam(required = false) List<String> seniority,
+            @RequestParam(required = false) List<String> location,
+            @RequestParam(required = false) BigDecimal salaryMin,
+            @RequestParam(required = false) BigDecimal salaryMax,
+            @RequestParam(required = false) Boolean availability,
+            @RequestParam(defaultValue = "0") Integer page,
+            @RequestParam(defaultValue = "20") Integer size,
+            @RequestParam(defaultValue = "relevance") String sortBy
+    ) {
+        SearchCriteria searchCriteria = new SearchCriteria();
+        searchCriteria.setQuery(query);
+        searchCriteria.setSkills(skills);
+        searchCriteria.setExperienceMin(experienceMin);
+        searchCriteria.setExperienceMax(experienceMax);
+        searchCriteria.setSeniority(seniority);
+        searchCriteria.setLocation(location);
+        searchCriteria.setSalaryMin(salaryMin);
+        searchCriteria.setSalaryMax(salaryMax);
+        searchCriteria.setAvailability(availability);
+        searchCriteria.setPage(page);
+        searchCriteria.setSize(size);
+        searchCriteria.setSortBy(sortBy);
+
+        EngineersSearchResponse engineersSearchResponse = engineersSearchService.searchEngineers(searchCriteria);
+
+        return new ResponseEntity<>(engineersSearchResponse, HttpStatus.OK);
+    }
 
     /**
      * This method responds to the frontend's request for available skills
