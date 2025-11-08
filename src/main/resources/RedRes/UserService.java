@@ -3,8 +3,8 @@ package com.skillbridge.service;
 import com.skillbridge.dto.LoginResponse;
 import com.skillbridge.dto.LoginRequest;
 import com.skillbridge.dto.RegisterRequest;
-import com.skillbridge.entity.User;
-import com.skillbridge.repository.UserRepository;
+import com.skillbridge.entity.auth.User;
+import com.skillbridge.repository.auth.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 

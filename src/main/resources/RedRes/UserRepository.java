@@ -1,6 +1,6 @@
 package com.skillbridge.repository;
 
-import com.skillbridge.entity.User;
+import com.skillbridge.entity.auth.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
