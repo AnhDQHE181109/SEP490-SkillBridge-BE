@@ -82,6 +82,14 @@
             <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- AWS SDK for SES -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-ses</artifactId>
+            <version>1.12.529</version>
+        </dependency>
+
     </dependencies>
     
     <build>
