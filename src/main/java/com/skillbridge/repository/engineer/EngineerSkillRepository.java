@@ -35,7 +35,7 @@ public interface EngineerSkillRepository extends JpaRepository<EngineerSkill, In
      * @param engineerId The engineer ID
      * @return List of SkillDTOs with complete skill information
      */
-    @Query("SELECT new com.skillbridge.dto.SkillDTO(s.id, s.name, es.level, es.years) " +
+    @Query("SELECT new com.skillbridge.dto.engineer.response.SkillDTO(s.id, s.name, es.level, es.years) " +
             "FROM EngineerSkill es " +
             "JOIN Skill s ON es.skillId = s.id " +
             "WHERE es.engineerId = :engineerId " +
