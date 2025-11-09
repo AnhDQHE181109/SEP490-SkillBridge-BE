@@ -1,6 +1,6 @@
 package com.skillbridge.controller.api.engineer;
 
-import com.skillbridge.dto.engineer.response.EngineerDetailsDTO;
+import com.skillbridge.dto.engineer.response.EngineerDetailDTO;
 import com.skillbridge.service.engineer.EngineerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/public/engineers")
 @CrossOrigin(origins = "*")
-public class EngineerDetailsController {
+public class EngineerDetailController {
 
     @Autowired
     private EngineerService engineerService;
@@ -21,18 +21,18 @@ public class EngineerDetailsController {
     /**
      * Get engineer detail by ID
      * GET /api/public/engineers/{id}
-     *
+     * 
      * @param id Engineer ID
      * @return Engineer detail information with skills and certificates
      */
     @GetMapping("/{id}")
-    public ResponseEntity<EngineerDetailsDTO> getEngineerById(@PathVariable Integer id) {
-        EngineerDetailsDTO engineer = engineerService.getEngineerDetailById(id);
-
+    public ResponseEntity<EngineerDetailDTO> getEngineerById(@PathVariable Integer id) {
+        EngineerDetailDTO engineer = engineerService.getEngineerDetailById(id);
+        
         if (engineer == null) {
             return ResponseEntity.notFound().build();
         }
-
+        
         return ResponseEntity.ok(engineer);
     }
 }

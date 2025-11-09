@@ -1,12 +1,12 @@
 package com.skillbridge.service.engineer;
 
 import com.skillbridge.dto.engineer.response.CertificateDTO;
-import com.skillbridge.dto.engineer.response.EngineerDetailsDTO;
+import com.skillbridge.dto.engineer.response.EngineerDetailDTO;
 import com.skillbridge.dto.engineer.response.SkillDTO;
 import com.skillbridge.entity.engineer.Certificate;
 import com.skillbridge.entity.engineer.Engineer;
 import com.skillbridge.repository.engineer.CertificateRepository;
-import com.skillbridge.repository.engineer.EngineersRepository;
+import com.skillbridge.repository.engineer.EngineerRepository;
 import com.skillbridge.repository.engineer.EngineerSkillRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 public class EngineerService {
 
     @Autowired
-    private EngineersRepository engineerRepository;
+    private EngineerRepository engineerRepository;
 
     @Autowired
     private EngineerSkillRepository engineerSkillRepository;
@@ -35,41 +35,41 @@ public class EngineerService {
      * @param id Engineer ID
      * @return EngineerDetailDTO with complete profile information
      */
-    public EngineerDetailsDTO getEngineerDetailById(Integer id) {
+    public EngineerDetailDTO getEngineerDetailById(Integer id) {
         // Find engineer
         Engineer engineer = engineerRepository.findById(id)
-                .orElse(null);
-
+            .orElse(null);
+            
         if (engineer == null) {
             return null;
         }
-
+        
         // Create DTO and map basic fields
-        EngineerDetailsDTO dto = new EngineerDetailsDTO();
-        dto.setId(engineer.getID());
+        EngineerDetailDTO dto = new EngineerDetailDTO();
+        dto.setId(engineer.getId());
         dto.setFullName(engineer.getFullName());
         dto.setLocation(engineer.getLocation());
-        dto.setProfileImageUrl(engineer.getProfileImageURL());
+        dto.setProfileImageUrl(engineer.getProfileImageUrl());
         dto.setSalaryExpectation(engineer.getSalaryExpectation());
-        dto.setYearsExperience(engineer.getYearsOfExperience());
+        dto.setYearsExperience(engineer.getYearsExperience());
         dto.setSeniority(engineer.getSeniority());
         dto.setStatus(engineer.getStatus());
         dto.setPrimarySkill(engineer.getPrimarySkill());
         dto.setLanguageSummary(engineer.getLanguageSummary());
         dto.setSummary(engineer.getSummary());
         dto.setIntroduction(engineer.getIntroduction());
-
+        
         // Load skills (using custom query with join)
         List<SkillDTO> skills = engineerSkillRepository.findSkillsByEngineerId(id);
         dto.setSkills(skills);
-
+        
         // Load certificates
         List<Certificate> certificates = certificateRepository.findByEngineerId(id);
         List<CertificateDTO> certificateDTOs = certificates.stream()
-                .map(this::convertToCertificateDTO)
-                .collect(Collectors.toList());
+            .map(this::convertToCertificateDTO)
+            .collect(Collectors.toList());
         dto.setCertificates(certificateDTOs);
-
+        
         return dto;
     }
 
