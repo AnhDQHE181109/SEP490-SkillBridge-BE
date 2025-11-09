@@ -61,6 +61,12 @@ public class Contact {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Column(name = "proposal_link", length = 500)
+    private String proposalLink;
+
+    @Column(name = "proposal_status", length = 50)
+    private String proposalStatus = "Pending";
+
     // Many-to-One relationship with User (client)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_user_id", insertable = false, updatable = false)
@@ -216,6 +222,22 @@ public class Contact {
 
     public void setClientUser(User clientUser) {
         this.clientUser = clientUser;
+    }
+
+    public String getProposalLink() {
+        return proposalLink;
+    }
+
+    public void setProposalLink(String proposalLink) {
+        this.proposalLink = proposalLink;
+    }
+
+    public String getProposalStatus() {
+        return proposalStatus;
+    }
+
+    public void setProposalStatus(String proposalStatus) {
+        this.proposalStatus = proposalStatus;
     }
 }
 
