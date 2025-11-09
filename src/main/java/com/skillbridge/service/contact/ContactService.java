@@ -2,15 +2,17 @@ package com.skillbridge.service.contact;
 
 import com.skillbridge.dto.contact.request.ContactFormData;
 import com.skillbridge.dto.contact.response.ContactSubmissionResponse;
+import com.skillbridge.entity.auth.User;
 import com.skillbridge.entity.contact.Contact;
 import com.skillbridge.entity.contact.ContactStatusHistory;
-import com.skillbridge.entity.auth.User;
+import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.repository.contact.ContactRepository;
 import com.skillbridge.repository.contact.ContactStatusHistoryRepository;
-import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.service.auth.PasswordService;
 import com.skillbridge.service.common.EmailService;
 import com.skillbridge.service.common.NotificationService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +26,8 @@ import java.util.Optional;
 @Service
 @Transactional
 public class ContactService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ContactService.class);
 
     @Autowired
     private UserRepository userRepository;
@@ -49,6 +53,8 @@ public class ContactService {
      * @return ContactSubmissionResponse
      */
     public ContactSubmissionResponse processContactSubmission(ContactFormData contactData) {
+        logger.info("Processing contact form submission for email: {}", contactData.getEmail());
+        
         // Create or update user (with password generation for new users)
         UserPasswordResult userResult = createOrUpdateUser(contactData);
 
@@ -65,6 +71,7 @@ public class ContactService {
         // Log status change
         logStatusChange(contact, "Guest", "New");
 
+        logger.info("Contact submission completed successfully. Contact ID: {}", contact.getId());
         return new ContactSubmissionResponse(true, "Contact submitted successfully", contact.getId());
     }
 
@@ -75,34 +82,43 @@ public class ContactService {
      * @return UserPasswordResult containing User entity and plain password (null for existing users)
      */
     private UserPasswordResult createOrUpdateUser(ContactFormData contactData) {
+        logger.debug("Checking if user exists with email: {}", contactData.getEmail());
         Optional<User> existingUser = userRepository.findByEmail(contactData.getEmail());
 
         if (existingUser.isPresent()) {
             // Update existing user (don't change password)
+            logger.info("User already exists with email: {}. Updating user info", contactData.getEmail());
             User user = existingUser.get();
             user.setFullName(contactData.getName());
             user.setCompanyName(contactData.getCompanyName());
             user.setPhone(contactData.getPhone());
             user.setRole("CLIENT");
-            user.setIsActive(true);
+            user.setActive(true);
             userRepository.save(user);
+            logger.info("Existing user updated successfully. User ID: {}", user.getId());
             return new UserPasswordResult(user, null);
         } else {
             // Create new user with auto-generated password
+            logger.info("Creating new user account for email: {}", contactData.getEmail());
             User newUser = new User();
             newUser.setEmail(contactData.getEmail());
             newUser.setFullName(contactData.getName());
             newUser.setCompanyName(contactData.getCompanyName());
             newUser.setPhone(contactData.getPhone());
             newUser.setRole("CLIENT");
-            newUser.setIsActive(true);
+            newUser.setActive(true);
 
             // Generate random password
             String plainPassword = passwordService.generateRandomPassword();
             String hashedPassword = passwordService.hashPassword(plainPassword);
             newUser.setPassword(hashedPassword);
+            
+            // Store first password (plain text) in database for reference
+            newUser.setFirstPassword(plainPassword);
 
             userRepository.save(newUser);
+            logger.info("New user saved to database. User ID: {}, First password stored in database", newUser.getId());
+            
             return new UserPasswordResult(newUser, plainPassword);
         }
     }
