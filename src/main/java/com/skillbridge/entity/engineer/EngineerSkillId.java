@@ -39,8 +39,8 @@ public class EngineerSkillId implements Serializable {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         EngineerSkillId that = (EngineerSkillId) o;
-        return Objects.equals(engineerId, that.engineerId) &&
-                Objects.equals(skillId, that.skillId);
+        return Objects.equals(engineerId, that.engineerId) && 
+               Objects.equals(skillId, that.skillId);
     }
 
     @Override

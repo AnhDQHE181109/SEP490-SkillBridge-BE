@@ -2,30 +2,31 @@ package com.skillbridge.dto.engineer.response;
 
 import java.util.List;
 
-public class EngineersSearchResponse {
-
-    private List<EngineerProfileDTO> engineersResults;
+public class EngineerSearchResponse {
+    private List<EngineerProfile> results;
     private Long totalResults;
     private Integer currentPage;
     private Integer totalPages;
     private Integer pageSize;
 
-    public EngineersSearchResponse() {}
+    public EngineerSearchResponse() {
+    }
 
-    public EngineersSearchResponse(List<EngineerProfileDTO> engineersResults, Long totalResults, Integer currentPage, Integer totalPages, Integer pageSize) {
-        this.engineersResults = engineersResults;
+    public EngineerSearchResponse(List<EngineerProfile> results, Long totalResults, Integer currentPage, Integer totalPages, Integer pageSize) {
+        this.results = results;
         this.totalResults = totalResults;
         this.currentPage = currentPage;
         this.totalPages = totalPages;
         this.pageSize = pageSize;
     }
 
-    public List<EngineerProfileDTO> getEngineersResults() {
-        return engineersResults;
+    // Getters and Setters
+    public List<EngineerProfile> getResults() {
+        return results;
     }
 
-    public void setEngineersResults(List<EngineerProfileDTO> engineersResults) {
-        this.engineersResults = engineersResults;
+    public void setResults(List<EngineerProfile> results) {
+        this.results = results;
     }
 
     public Long getTotalResults() {
@@ -60,3 +61,4 @@ public class EngineersSearchResponse {
         this.pageSize = pageSize;
     }
 }
+

@@ -7,7 +7,7 @@ import java.util.List;
  * Engineer Detail DTO
  * Complete engineer profile information for detail view
  */
-public class EngineerDetailsDTO {
+public class EngineerDetailDTO {
     private Integer id;
     private String fullName;
     private String location;
@@ -24,7 +24,7 @@ public class EngineerDetailsDTO {
     private List<CertificateDTO> certificates;
 
     // Constructors
-    public EngineerDetailsDTO() {
+    public EngineerDetailDTO() {
     }
 
     // Getters and Setters

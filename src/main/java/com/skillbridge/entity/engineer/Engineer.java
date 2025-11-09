@@ -1,44 +1,42 @@
 package com.skillbridge.entity.engineer;
 
 import jakarta.persistence.*;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "engineers")
 public class Engineer {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer ID;
+    private Integer id;
 
     @Column(name = "full_name")
     private String fullName;
 
     @Column(name = "years_experience")
-    private Integer yearsOfExperience;
+    private Integer yearsExperience;
 
-    @Column(name = "seniority", length = 32)
+    @Column(length = 32)
     private String seniority;
 
-    @Column(name = "summary", columnDefinition = "TEXT")
+    @Column(columnDefinition = "TEXT")
     private String summary;
 
-    @Column(name = "introduction", columnDefinition = "TEXT")
+    @Column(columnDefinition = "TEXT")
     private String introduction;
 
-    @Column(name = "location", length = 128)
+    @Column(length = 128)
     private String location;
 
     @Column(name = "language_summary", length = 64)
     private String languageSummary;
 
-    @Column(name = "status", length = 32)
+    @Column(length = 32)
     private String status;
 
     @Column(name = "profile_image_url", length = 500)
-    private String profileImageURL;
+    private String profileImageUrl;
 
     @Column(name = "salary_expectation", precision = 10, scale = 2)
     private BigDecimal salaryExpectation;
@@ -63,12 +61,13 @@ public class Engineer {
         updatedAt = LocalDateTime.now();
     }
 
-    public Integer getID() {
-        return ID;
+    // Getters and Setters
+    public Integer getId() {
+        return id;
     }
 
-    public void setID(Integer ID) {
-        this.ID = ID;
+    public void setId(Integer id) {
+        this.id = id;
     }
 
     public String getFullName() {
@@ -79,12 +78,12 @@ public class Engineer {
         this.fullName = fullName;
     }
 
-    public Integer getYearsOfExperience() {
-        return yearsOfExperience;
+    public Integer getYearsExperience() {
+        return yearsExperience;
     }
 
-    public void setYearsOfExperience(Integer yearsOfExperience) {
-        this.yearsOfExperience = yearsOfExperience;
+    public void setYearsExperience(Integer yearsExperience) {
+        this.yearsExperience = yearsExperience;
     }
 
     public String getSeniority() {
@@ -135,12 +134,12 @@ public class Engineer {
         this.status = status;
     }
 
-    public String getProfileImageURL() {
-        return profileImageURL;
+    public String getProfileImageUrl() {
+        return profileImageUrl;
     }
 
-    public void setProfileImageURL(String profileImageURL) {
-        this.profileImageURL = profileImageURL;
+    public void setProfileImageUrl(String profileImageUrl) {
+        this.profileImageUrl = profileImageUrl;
     }
 
     public BigDecimal getSalaryExpectation() {
@@ -175,3 +174,4 @@ public class Engineer {
         this.updatedAt = updatedAt;
     }
 }
+
