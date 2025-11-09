@@ -21,6 +21,9 @@ public class User {
     @Column(name = "password", length = 255)
     private String password;
 
+    @Column(name = "first_password", length = 255)
+    private String firstPassword;
+
     @Column(name = "company_name", length = 255)
     private String companyName;
 
@@ -80,6 +83,14 @@ public class User {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public String getFirstPassword() {
+        return firstPassword;
+    }
+
+    public void setFirstPassword(String firstPassword) {
+        this.firstPassword = firstPassword;
     }
 
     public String getCompanyName() {

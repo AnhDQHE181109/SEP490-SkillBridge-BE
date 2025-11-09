@@ -4,9 +4,9 @@ import java.math.BigDecimal;
 import java.util.List;
 
 public class SearchCriteria {
-
     private String query;
     private List<String> skills;
+    private List<String> languages;
     private Integer experienceMin;
     private Integer experienceMax;
     private List<String> seniority;
@@ -25,6 +25,7 @@ public class SearchCriteria {
         this.availability = true;
     }
 
+    // Getters and Setters
     public String getQuery() {
         return query;
     }
@@ -39,6 +40,14 @@ public class SearchCriteria {
 
     public void setSkills(List<String> skills) {
         this.skills = skills;
+    }
+
+    public List<String> getLanguages() {
+        return languages;
+    }
+
+    public void setLanguages(List<String> languages) {
+        this.languages = languages;
     }
 
     public Integer getExperienceMin() {
@@ -120,22 +129,5 @@ public class SearchCriteria {
     public void setSortBy(String sortBy) {
         this.sortBy = sortBy;
     }
-
-    @Override
-    public String toString() {
-        return "SearchCriteria{" +
-                "query='" + query + '\'' +
-                ", skills=" + skills +
-                ", experienceMin=" + experienceMin +
-                ", experienceMax=" + experienceMax +
-                ", seniority=" + seniority +
-                ", location=" + location +
-                ", salaryMin=" + salaryMin +
-                ", salaryMax=" + salaryMax +
-                ", availability=" + availability +
-                ", page=" + page +
-                ", size=" + size +
-                ", sortBy='" + sortBy + '\'' +
-                '}';
-    }
 }
+
