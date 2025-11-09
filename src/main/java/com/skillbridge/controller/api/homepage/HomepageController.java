@@ -1,10 +1,9 @@
 package com.skillbridge.controller.api.homepage;
 
-import com.skillbridge.dto.engineer.response.EngineerProfileDTO;
-import com.skillbridge.dto.common.HomepageStatisticsDTO;
+import com.skillbridge.dto.common.HomepageStatistics;
+import com.skillbridge.dto.engineer.response.EngineerProfile;
 import com.skillbridge.service.common.HomepageService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,16 +17,24 @@ public class HomepageController {
     @Autowired
     private HomepageService homepageService;
 
+    /**
+     * Get homepage statistics
+     * GET /api/public/homepage/statistics
+     */
     @GetMapping("/homepage/statistics")
-    public ResponseEntity<HomepageStatisticsDTO> getHomepageStatistics() {
-        HomepageStatisticsDTO homepageStatisticsDTO = homepageService.getHomepageStatistics();
-        return new ResponseEntity<>(homepageStatisticsDTO, HttpStatus.OK);
+    public ResponseEntity<HomepageStatistics> getHomepageStatistics() {
+        HomepageStatistics stats = homepageService.getHomepageStatistics();
+        return ResponseEntity.ok(stats);
     }
 
+    /**
+     * Get all homepage engineers (grouped by categories)
+     * GET /api/public/homepage/engineers
+     */
     @GetMapping("/homepage/engineers")
-    public ResponseEntity<List<EngineerProfileDTO>> getEngineersList() {
-        List<EngineerProfileDTO> engineersList = homepageService.getAllCategoryEngineers();
-        return new ResponseEntity<>(engineersList, HttpStatus.OK);
+    public ResponseEntity<List<EngineerProfile>> getHomepageEngineers() {
+        List<EngineerProfile> engineers = homepageService.getAllCategoryEngineers();
+        return ResponseEntity.ok(engineers);
     }
 
     /**
@@ -35,9 +42,9 @@ public class HomepageController {
      * GET /api/public/homepage/engineers/{category}
      */
     @GetMapping("/homepage/engineers/{category}")
-    public ResponseEntity<List<EngineerProfileDTO>> getEngineersByCategory(@PathVariable String category) {
-        List<EngineerProfileDTO> engineersListByCategory = homepageService.getEngineersByCategory(category);
-        return new ResponseEntity<>(engineersListByCategory, HttpStatus.OK);
+    public ResponseEntity<List<EngineerProfile>> getEngineersByCategory(@PathVariable String category) {
+        List<EngineerProfile> engineers = homepageService.getEngineersByCategory(category);
+        return ResponseEntity.ok(engineers);
     }
-
 }
+
