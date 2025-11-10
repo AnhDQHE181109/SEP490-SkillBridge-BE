@@ -3,34 +3,31 @@ package com.skillbridge.entity.proposal;
 import com.skillbridge.entity.auth.User;
 import com.skillbridge.entity.contact.Contact;
 import jakarta.persistence.*;
+
 import java.time.LocalDateTime;
 
-/**
- * Proposal Entity
- * Represents a proposal linked to a contact
- */
 @Entity
 @Table(name = "proposals")
 public class Proposal {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id;
+    private Integer ID;
 
     @Column(name = "title", length = 255, nullable = false)
     private String title;
 
     @Column(name = "status", length = 50, nullable = false)
-    private String status = "draft"; // "draft", "under review", "Sent to client", "Reject", "Approved"
+    private String status;
 
     @Column(name = "reviewer_id")
-    private Integer reviewerId;
+    private Integer reviewerID;
 
     @Column(name = "contact_id", nullable = false)
-    private Integer contactId;
+    private Integer contactID;
 
     @Column(name = "link", length = 500)
-    private String link; // Link to S3 document
+    private String link;
 
     @Column(name = "created_by", nullable = false)
     private Integer createdBy;
@@ -67,17 +64,14 @@ public class Proposal {
         updatedAt = LocalDateTime.now();
     }
 
-    // Constructors
-    public Proposal() {
+    public Proposal() {}
+
+    public Integer getID() {
+        return ID;
     }
 
-    // Getters and Setters
-    public Integer getId() {
-        return id;
-    }
-
-    public void setId(Integer id) {
-        this.id = id;
+    public void setID(Integer ID) {
+        this.ID = ID;
     }
 
     public String getTitle() {
@@ -96,20 +90,20 @@ public class Proposal {
         this.status = status;
     }
 
-    public Integer getReviewerId() {
-        return reviewerId;
+    public Integer getReviewerID() {
+        return reviewerID;
     }
 
-    public void setReviewerId(Integer reviewerId) {
-        this.reviewerId = reviewerId;
+    public void setReviewerID(Integer reviewerID) {
+        this.reviewerID = reviewerID;
     }
 
-    public Integer getContactId() {
-        return contactId;
+    public Integer getContactID() {
+        return contactID;
     }
 
-    public void setContactId(Integer contactId) {
-        this.contactId = contactId;
+    public void setContactID(Integer contactID) {
+        this.contactID = contactID;
     }
 
     public String getLink() {
@@ -168,4 +162,3 @@ public class Proposal {
         this.creator = creator;
     }
 }
-
