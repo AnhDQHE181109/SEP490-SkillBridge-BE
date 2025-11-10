@@ -2,23 +2,25 @@ package com.skillbridge.dto.proposal.response;
 
 /**
  * Proposal List Item DTO
- * Represents an item on the list on the list of proposals
+ * Represents a proposal in the list view
  */
 public class ProposalListItemDTO {
-
     private Integer no;
-    private Integer internalProposalID; //Internal ID used for identifying records
-    private String proposalID;  //Displayed on the list as: P-YYYY-NN
+    private Integer internalId; // Primary key for navigation
+    private String id; // Format: P-YYYY-NN
     private String title;
-    private String contactID;   //Displayed on the list as: CT-YYYY-NN
-    private Integer contactInternalID;  //Internal contact ID used for identifying records
+    private String contactId; // Format: CT-YYYY-NN
+    private Integer contactInternalId; // Contact primary key for navigation
     private String contactDescription;
-    private String createdOn;   //Format: YYYY/MM/DD
-    private String status;  //"Under review",  "Request for change", "Approved"
+    private String createdOn; // Format: YYYY/MM/DD
+    private String status; // "Under review", "Request for change", "Approved"
     private String lastUpdated; // Format: YYYY/MM/DD
 
-    public ProposalListItemDTO() {}
+    // Constructors
+    public ProposalListItemDTO() {
+    }
 
+    // Getters and Setters
     public Integer getNo() {
         return no;
     }
@@ -27,20 +29,20 @@ public class ProposalListItemDTO {
         this.no = no;
     }
 
-    public Integer getInternalProposalID() {
-        return internalProposalID;
+    public Integer getInternalId() {
+        return internalId;
     }
 
-    public void setInternalProposalID(Integer internalProposalID) {
-        this.internalProposalID = internalProposalID;
+    public void setInternalId(Integer internalId) {
+        this.internalId = internalId;
     }
 
-    public String getProposalID() {
-        return proposalID;
+    public String getId() {
+        return id;
     }
 
-    public void setProposalID(String proposalID) {
-        this.proposalID = proposalID;
+    public void setId(String id) {
+        this.id = id;
     }
 
     public String getTitle() {
@@ -51,20 +53,20 @@ public class ProposalListItemDTO {
         this.title = title;
     }
 
-    public String getContactID() {
-        return contactID;
+    public String getContactId() {
+        return contactId;
     }
 
-    public void setContactID(String contactID) {
-        this.contactID = contactID;
+    public void setContactId(String contactId) {
+        this.contactId = contactId;
     }
 
-    public Integer getContactInternalID() {
-        return contactInternalID;
+    public Integer getContactInternalId() {
+        return contactInternalId;
     }
 
-    public void setContactInternalID(Integer contactInternalID) {
-        this.contactInternalID = contactInternalID;
+    public void setContactInternalId(Integer contactInternalId) {
+        this.contactInternalId = contactInternalId;
     }
 
     public String getContactDescription() {
@@ -99,3 +101,4 @@ public class ProposalListItemDTO {
         this.lastUpdated = lastUpdated;
     }
 }
+

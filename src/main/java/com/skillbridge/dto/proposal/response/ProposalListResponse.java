@@ -2,44 +2,51 @@ package com.skillbridge.dto.proposal.response;
 
 import java.util.List;
 
+/**
+ * Proposal List Response DTO
+ * Contains paginated proposal list
+ */
 public class ProposalListResponse {
+    private List<ProposalListItemDTO> proposals;
+    private int currentPage;
+    private int totalPages;
+    private long totalElements;
 
-    private List<ProposalListItemDTO> proposalsList;
-    private Long totalItems;
-    private Integer currentPage;
-    private Integer totalPages;
-
-    public ProposalListResponse() {}
-
-    public List<ProposalListItemDTO> getProposalsList() {
-        return proposalsList;
+    // Constructors
+    public ProposalListResponse() {
     }
 
-    public void setProposalsList(List<ProposalListItemDTO> proposalsList) {
-        this.proposalsList = proposalsList;
+    // Getters and Setters
+    public List<ProposalListItemDTO> getProposals() {
+        return proposals;
     }
 
-    public Long getTotalItems() {
-        return totalItems;
+    public void setProposals(List<ProposalListItemDTO> proposals) {
+        this.proposals = proposals;
     }
 
-    public void setTotalItems(Long totalItems) {
-        this.totalItems = totalItems;
-    }
-
-    public Integer getCurrentPage() {
+    public int getCurrentPage() {
         return currentPage;
     }
 
-    public void setCurrentPage(Integer currentPage) {
+    public void setCurrentPage(int currentPage) {
         this.currentPage = currentPage;
     }
 
-    public Integer getTotalPages() {
+    public int getTotalPages() {
         return totalPages;
     }
 
-    public void setTotalPages(Integer totalPages) {
+    public void setTotalPages(int totalPages) {
         this.totalPages = totalPages;
     }
+
+    public long getTotalElements() {
+        return totalElements;
+    }
+
+    public void setTotalElements(long totalElements) {
+        this.totalElements = totalElements;
+    }
 }
+
