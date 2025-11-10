@@ -1,7 +1,7 @@
 package com.skillbridge.controller.client.proposal;
 
 import com.skillbridge.dto.proposal.response.ProposalListResponse;
-import com.skillbridge.service.proposal.ProposalsListService;
+import com.skillbridge.service.proposal.ProposalListService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +18,7 @@ public class ClientProposalController {
 
     private static final Logger log = LogManager.getLogger(ClientProposalController.class);
     @Autowired
-    private ProposalsListService proposalsListService;
+    private ProposalListService proposalListService;
 
     @GetMapping("/proposals")
     public ResponseEntity<ProposalListResponse> getProposals(
@@ -34,7 +34,7 @@ public class ClientProposalController {
                 userID = 1;
             }
 
-            ProposalListResponse proposalsListResponse = proposalsListService.getProposalsList(
+            ProposalListResponse proposalsListResponse = proposalListService.getProposalsList(
                     userID,
                     search,
                     status,
