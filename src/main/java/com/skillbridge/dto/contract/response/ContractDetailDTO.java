@@ -1,0 +1,335 @@
+package com.skillbridge.dto.contract.response;
+
+import java.util.List;
+
+/**
+ * Contract Detail DTO
+ * Data transfer object for contract detail information
+ */
+public class ContractDetailDTO {
+    private Integer internalId; // Primary key (database ID)
+    private String id; // Display ID format: MSA-YYYY-MM-DD-NN (for display only)
+    
+    // Overview
+    private String contractType; // "MSA" or "SOW"
+    private String contractName;
+    private String effectiveStart; // Format: YYYY/MM/DD
+    private String effectiveEnd; // Format: YYYY/MM/DD
+    private String status; // "Draft", "Active", "Pending", "Under Review", etc.
+    
+    // Commercial Terms
+    private String currency; // e.g., "JPY", "USD"
+    private String paymentTerms; // e.g., "Net", "Net 30"
+    private String invoicingCycle; // e.g., "Monthly", "Weekly"
+    private String billingDay; // e.g., "Last business day"
+    private String taxWithholding; // e.g., "10%"
+    
+    // Legal / Compliance
+    private String ipOwnership; // e.g., "Client", "LandBridge"
+    private String governingLaw; // e.g., "JP", "US"
+    
+    // Contacts
+    private ContactInfo clientContact;
+    private ContactInfo landbridgeContact;
+    
+    // SOW specific fields
+    private String engagementType; // "Fixed Price" or "Retainer"
+    private ParentMSAInfo parentMSA;
+    private String projectName;
+    private String scopeSummary;
+    
+    // Fixed Price SOW fields
+    private List<MilestoneDeliverableDTO> milestones;
+    private List<FixedPriceBillingDetailDTO> billingDetails;
+    
+    // Retainer SOW fields
+    private List<DeliveryItemDTO> deliveryItems;
+    private List<RetainerBillingDetailDTO> retainerBillingDetails;
+    
+    // Change Requests (common for both)
+    private List<ChangeRequestDTO> changeRequests;
+    
+    // History
+    private List<ContractHistoryItemDTO> history;
+    
+    // Constructors
+    public ContractDetailDTO() {
+    }
+
+    // Getters and Setters
+    public Integer getInternalId() {
+        return internalId;
+    }
+
+    public void setInternalId(Integer internalId) {
+        this.internalId = internalId;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public String getContractType() {
+        return contractType;
+    }
+
+    public void setContractType(String contractType) {
+        this.contractType = contractType;
+    }
+
+    public String getContractName() {
+        return contractName;
+    }
+
+    public void setContractName(String contractName) {
+        this.contractName = contractName;
+    }
+
+    public String getEffectiveStart() {
+        return effectiveStart;
+    }
+
+    public void setEffectiveStart(String effectiveStart) {
+        this.effectiveStart = effectiveStart;
+    }
+
+    public String getEffectiveEnd() {
+        return effectiveEnd;
+    }
+
+    public void setEffectiveEnd(String effectiveEnd) {
+        this.effectiveEnd = effectiveEnd;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
+    }
+
+    public String getPaymentTerms() {
+        return paymentTerms;
+    }
+
+    public void setPaymentTerms(String paymentTerms) {
+        this.paymentTerms = paymentTerms;
+    }
+
+    public String getInvoicingCycle() {
+        return invoicingCycle;
+    }
+
+    public void setInvoicingCycle(String invoicingCycle) {
+        this.invoicingCycle = invoicingCycle;
+    }
+
+    public String getBillingDay() {
+        return billingDay;
+    }
+
+    public void setBillingDay(String billingDay) {
+        this.billingDay = billingDay;
+    }
+
+    public String getTaxWithholding() {
+        return taxWithholding;
+    }
+
+    public void setTaxWithholding(String taxWithholding) {
+        this.taxWithholding = taxWithholding;
+    }
+
+    public String getIpOwnership() {
+        return ipOwnership;
+    }
+
+    public void setIpOwnership(String ipOwnership) {
+        this.ipOwnership = ipOwnership;
+    }
+
+    public String getGoverningLaw() {
+        return governingLaw;
+    }
+
+    public void setGoverningLaw(String governingLaw) {
+        this.governingLaw = governingLaw;
+    }
+
+    public ContactInfo getClientContact() {
+        return clientContact;
+    }
+
+    public void setClientContact(ContactInfo clientContact) {
+        this.clientContact = clientContact;
+    }
+
+    public ContactInfo getLandbridgeContact() {
+        return landbridgeContact;
+    }
+
+    public void setLandbridgeContact(ContactInfo landbridgeContact) {
+        this.landbridgeContact = landbridgeContact;
+    }
+
+    public List<ContractHistoryItemDTO> getHistory() {
+        return history;
+    }
+
+    public void setHistory(List<ContractHistoryItemDTO> history) {
+        this.history = history;
+    }
+
+    // SOW specific getters and setters
+    public String getEngagementType() {
+        return engagementType;
+    }
+
+    public void setEngagementType(String engagementType) {
+        this.engagementType = engagementType;
+    }
+
+    public ParentMSAInfo getParentMSA() {
+        return parentMSA;
+    }
+
+    public void setParentMSA(ParentMSAInfo parentMSA) {
+        this.parentMSA = parentMSA;
+    }
+
+    public String getProjectName() {
+        return projectName;
+    }
+
+    public void setProjectName(String projectName) {
+        this.projectName = projectName;
+    }
+
+    public String getScopeSummary() {
+        return scopeSummary;
+    }
+
+    public void setScopeSummary(String scopeSummary) {
+        this.scopeSummary = scopeSummary;
+    }
+
+    public List<MilestoneDeliverableDTO> getMilestones() {
+        return milestones;
+    }
+
+    public void setMilestones(List<MilestoneDeliverableDTO> milestones) {
+        this.milestones = milestones;
+    }
+
+    public List<FixedPriceBillingDetailDTO> getBillingDetails() {
+        return billingDetails;
+    }
+
+    public void setBillingDetails(List<FixedPriceBillingDetailDTO> billingDetails) {
+        this.billingDetails = billingDetails;
+    }
+
+    public List<DeliveryItemDTO> getDeliveryItems() {
+        return deliveryItems;
+    }
+
+    public void setDeliveryItems(List<DeliveryItemDTO> deliveryItems) {
+        this.deliveryItems = deliveryItems;
+    }
+
+    public List<RetainerBillingDetailDTO> getRetainerBillingDetails() {
+        return retainerBillingDetails;
+    }
+
+    public void setRetainerBillingDetails(List<RetainerBillingDetailDTO> retainerBillingDetails) {
+        this.retainerBillingDetails = retainerBillingDetails;
+    }
+
+    public List<ChangeRequestDTO> getChangeRequests() {
+        return changeRequests;
+    }
+
+    public void setChangeRequests(List<ChangeRequestDTO> changeRequests) {
+        this.changeRequests = changeRequests;
+    }
+
+    /**
+     * Contact Info DTO
+     * Nested class for contact information
+     */
+    public static class ContactInfo {
+        private String name;
+        private String email;
+
+        public ContactInfo() {
+        }
+
+        public ContactInfo(String name, String email) {
+            this.name = name;
+            this.email = email;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public String getEmail() {
+            return email;
+        }
+
+        public void setEmail(String email) {
+            this.email = email;
+        }
+    }
+
+    /**
+     * Parent MSA Info DTO
+     * Nested class for parent MSA information
+     */
+    public static class ParentMSAInfo {
+        private String id; // Display ID format: MSA-YYYY-MM-DD-NN
+        private String status; // "Active", "Draft", etc.
+
+        public ParentMSAInfo() {
+        }
+
+        public ParentMSAInfo(String id, String status) {
+            this.id = id;
+            this.status = status;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public String getStatus() {
+            return status;
+        }
+
+        public void setStatus(String status) {
+            this.status = status;
+        }
+    }
+}
+
