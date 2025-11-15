@@ -26,14 +26,14 @@ public class ClientDashboardController {
     /**
      * Get dashboard summary statistics
      * GET /api/client/dashboard/summary
-     *
+     * 
      * Headers:
      * - Authorization: Bearer {token}
      * - X-User-Id: {userId} (for now, should be replaced with JWT extraction)
      */
     @GetMapping("/summary")
     public ResponseEntity<DashboardSummaryDTO> getSummary(
-            @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        @RequestHeader(value = "X-User-Id", required = false) Integer userId
     ) {
         try {
             if (userId == null) {
@@ -52,18 +52,18 @@ public class ClientDashboardController {
     /**
      * Get recent activities
      * GET /api/client/dashboard/activities
-     *
+     * 
      * Query parameters:
      * - limit: Maximum number of activities to return (default: 10)
-     *
+     * 
      * Headers:
      * - Authorization: Bearer {token}
      * - X-User-Id: {userId} (for now, should be replaced with JWT extraction)
      */
     @GetMapping("/activities")
     public ResponseEntity<ActivitiesResponseDTO> getActivities(
-            @RequestHeader(value = "X-User-Id", required = false) Integer userId,
-            @RequestParam(value = "limit", defaultValue = "10") int limit
+        @RequestHeader(value = "X-User-Id", required = false) Integer userId,
+        @RequestParam(value = "limit", defaultValue = "10") int limit
     ) {
         try {
             if (userId == null) {
@@ -86,18 +86,18 @@ public class ClientDashboardController {
     /**
      * Get alerts/notifications
      * GET /api/client/dashboard/alerts
-     *
+     * 
      * Query parameters:
      * - limit: Maximum number of alerts to return (default: 10)
-     *
+     * 
      * Headers:
      * - Authorization: Bearer {token}
      * - X-User-Id: {userId} (for now, should be replaced with JWT extraction)
      */
     @GetMapping("/alerts")
     public ResponseEntity<AlertsResponseDTO> getAlerts(
-            @RequestHeader(value = "X-User-Id", required = false) Integer userId,
-            @RequestParam(value = "limit", defaultValue = "10") int limit
+        @RequestHeader(value = "X-User-Id", required = false) Integer userId,
+        @RequestParam(value = "limit", defaultValue = "10") int limit
     ) {
         try {
             if (userId == null) {

@@ -12,10 +12,14 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
 
+/**
+ * Security Configuration for Development Profile
+ * Allows all requests without authentication for development purposes
+ */
 @Configuration
 @EnableWebSecurity
-@Profile("!dev")
-public class SecurityConfig {
+@Profile("dev")
+public class DevSecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -23,16 +27,8 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
-                // Public endpoints (no authentication required)
-                .requestMatchers("/public/**").permitAll()
-                .requestMatchers("/auth/**").permitAll() // Authentication endpoints
-                .requestMatchers("/actuator/**").permitAll()
-                .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                // Client endpoints - temporarily permit all until JWT filter is fully implemented
-                // TODO: Add JWT authentication filter and require authentication for /client/** endpoints
-                .requestMatchers("/client/**").permitAll()
-                // All other endpoints require authentication
-                .anyRequest().authenticated()
+                // Allow all requests in development mode
+                .anyRequest().permitAll()
             );
 
         return http.build();
@@ -44,9 +40,7 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(Arrays.asList(
             "http://localhost:3000",
             "http://localhost:3001",
-            "http://localhost:4200",
-            "https://skill-bridge.dev.inisoft.vn",
-            "https://skill-bridge.dev.inisoft.vn/"
+            "http://localhost:4200"
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
