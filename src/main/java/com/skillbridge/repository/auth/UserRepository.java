@@ -28,7 +28,7 @@ public interface UserRepository extends JpaRepository<User, Integer> {
      * @param role User role
      * @return List of users with the specified role
      */
-    @Query("SELECT u FROM User u WHERE u.role = :role")
+    @Query("SELECT u FROM com.skillbridge.entity.auth.User u WHERE u.role = :role")
     List<User> findByRole(@Param("role") String role);
 
     /**
