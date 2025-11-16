@@ -52,6 +52,12 @@ public class SOWContract {
     @Column(name = "assignee_id", length = 50)
     private String assigneeId;
 
+    @Column(name = "assignee_user_id")
+    private Integer assigneeUserId;
+
+    @Column(name = "reviewer_id")
+    private Integer reviewerId;
+
     // Commercial Terms
     @Column(name = "currency", length = 16)
     private String currency;
@@ -81,6 +87,13 @@ public class SOWContract {
 
     @Column(name = "landbridge_contact_email", length = 255)
     private String landbridgeContactEmail;
+
+    // Attachments
+    @Column(name = "link", length = 500)
+    private String link; // Link to S3 document (first file)
+
+    @Column(name = "attachments_manifest", columnDefinition = "TEXT")
+    private String attachmentsManifest; // JSON string containing array of file links
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -200,6 +213,22 @@ public class SOWContract {
         this.assigneeId = assigneeId;
     }
 
+    public Integer getAssigneeUserId() {
+        return assigneeUserId;
+    }
+
+    public void setAssigneeUserId(Integer assigneeUserId) {
+        this.assigneeUserId = assigneeUserId;
+    }
+
+    public Integer getReviewerId() {
+        return reviewerId;
+    }
+
+    public void setReviewerId(Integer reviewerId) {
+        this.reviewerId = reviewerId;
+    }
+
     public String getCurrency() {
         return currency;
     }
@@ -270,6 +299,22 @@ public class SOWContract {
 
     public void setLandbridgeContactEmail(String landbridgeContactEmail) {
         this.landbridgeContactEmail = landbridgeContactEmail;
+    }
+
+    public String getLink() {
+        return link;
+    }
+
+    public void setLink(String link) {
+        this.link = link;
+    }
+
+    public String getAttachmentsManifest() {
+        return attachmentsManifest;
+    }
+
+    public void setAttachmentsManifest(String attachmentsManifest) {
+        this.attachmentsManifest = attachmentsManifest;
     }
 
     public LocalDateTime getCreatedAt() {
