@@ -18,10 +18,11 @@ public class ContactDetailDTO {
     private String onlineMtgDate; // Format: YYYY/MM/DD HH:MM
     private String onlineMtgLink;
     private String status;
-    private String proposalLink;
-    private String proposalStatus;
-    private String proposalApprovedAt; // Format: YYYY/MM/DD HH:MM
+    private String proposalLink; // Deprecated: Use proposals list instead
+    private String proposalStatus; // Deprecated: Use proposals list instead
+    private String proposalApprovedAt; // Deprecated: Use proposals list instead
     private ProposalCommentDTO proposalComment; // Latest comment if exists
+    private List<ContactProposalDTO> proposals; // List of all proposals for this contact
     private List<CommunicationLogDTO> communicationLogs;
 
     // Constructors
@@ -147,6 +148,14 @@ public class ContactDetailDTO {
 
     public void setProposalComment(ProposalCommentDTO proposalComment) {
         this.proposalComment = proposalComment;
+    }
+
+    public List<ContactProposalDTO> getProposals() {
+        return proposals;
+    }
+
+    public void setProposals(List<ContactProposalDTO> proposals) {
+        this.proposals = proposals;
     }
 
     public List<CommunicationLogDTO> getCommunicationLogs() {

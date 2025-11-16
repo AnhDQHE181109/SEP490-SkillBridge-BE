@@ -26,6 +26,7 @@ public class SecurityConfig {
                 // Public endpoints (no authentication required)
                 .requestMatchers("/public/**").permitAll()
                 .requestMatchers("/auth/**").permitAll() // Authentication endpoints
+                .requestMatchers("/sales/auth/**").permitAll() // Sales authentication endpoints (context-path /api is already applied)
                 .requestMatchers("/actuator/**").permitAll()
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 // Client endpoints - temporarily permit all until JWT filter is fully implemented
