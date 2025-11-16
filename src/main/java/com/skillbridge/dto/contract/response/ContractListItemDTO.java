@@ -2,6 +2,7 @@ package com.skillbridge.dto.contract.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * DTO for contract list item
@@ -33,7 +34,15 @@ public class ContractListItemDTO {
     
     private String assignee; // Assignee ID or null
     
+    private String clientName; // Client's full name
+    
+    private String clientEmail; // Client's email
+    
+    private String assigneeName; // Sales Man's name (from users table)
+    
     private String createdAt; // ISO format
+    
+    private List<String> attachments; // List of attachment S3 keys (from attachments_manifest)
 
     // Getters and Setters
     public Integer getInternalId() {
@@ -132,12 +141,44 @@ public class ContractListItemDTO {
         this.assignee = assignee;
     }
 
+    public String getClientName() {
+        return clientName;
+    }
+
+    public void setClientName(String clientName) {
+        this.clientName = clientName;
+    }
+
+    public String getClientEmail() {
+        return clientEmail;
+    }
+
+    public void setClientEmail(String clientEmail) {
+        this.clientEmail = clientEmail;
+    }
+
+    public String getAssigneeName() {
+        return assigneeName;
+    }
+
+    public void setAssigneeName(String assigneeName) {
+        this.assigneeName = assigneeName;
+    }
+
     public String getCreatedAt() {
         return createdAt;
     }
 
     public void setCreatedAt(String createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public List<String> getAttachments() {
+        return attachments;
+    }
+
+    public void setAttachments(List<String> attachments) {
+        this.attachments = attachments;
     }
 }
 

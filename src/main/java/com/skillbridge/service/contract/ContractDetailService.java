@@ -3,15 +3,21 @@ package com.skillbridge.service.contract;
 import com.skillbridge.dto.contract.response.*;
 import com.skillbridge.entity.auth.User;
 import com.skillbridge.entity.contract.*;
+import com.skillbridge.entity.document.DocumentMetadata;
 import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.repository.contract.*;
+import com.skillbridge.repository.document.DocumentMetadataRepository;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -49,6 +55,11 @@ public class ContractDetailService {
     @Autowired
     private RetainerBillingDetailRepository retainerBillingDetailRepository;
     
+    @Autowired
+    private DocumentMetadataRepository documentMetadataRepository;
+    
+    private final Gson gson = new Gson();
+    
     /**
      * Get contract detail for client
      * Tries MSA first, then SOW
@@ -83,8 +94,13 @@ public class ContractDetailService {
             ? contract.getLandbridgeContactEmail()
             : "support@landbridge.co.jp"; // Default
         
-        // Load contract history
-        List<ContractHistory> history = contractHistoryRepository.findByContractIdOrderByEntryDateDesc(contract.getId());
+        // Load contract history (exclude internal review entries)
+        List<ContractHistory> allHistory = contractHistoryRepository.findByContractIdOrderByEntryDateDesc(contract.getId());
+        // Filter out internal review entries (REVIEWED type or description containing "Review submitted")
+        List<ContractHistory> history = allHistory.stream()
+            .filter(h -> !"REVIEWED".equals(h.getHistoryType()) 
+                && (h.getDescription() == null || !h.getDescription().contains("Review submitted")))
+            .collect(Collectors.toList());
         
         // Convert to DTO
         ContractDetailDTO dto = new ContractDetailDTO();
@@ -118,6 +134,60 @@ public class ContractDetailService {
         landbridgeContact.setEmail(landbridgeContactEmail);
         dto.setLandbridgeContact(landbridgeContact);
         
+        // Load attachments from attachments_manifest
+        List<ContractDetailDTO.AttachmentDTO> attachments = new ArrayList<>();
+        
+        // First, try to load from attachments_manifest
+        if (contract.getAttachmentsManifest() != null && !contract.getAttachmentsManifest().trim().isEmpty()) {
+            try {
+                Type listType = new TypeToken<List<String>>(){}.getType();
+                List<String> attachmentLinks = gson.fromJson(contract.getAttachmentsManifest(), listType);
+                if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
+                    for (String s3Key : attachmentLinks) {
+                        if (s3Key != null && !s3Key.trim().isEmpty()) {
+                            String fileName = s3Key;
+                            if (fileName.contains("/")) {
+                                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                            }
+                            attachments.add(new ContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Error parsing attachments_manifest for contract " + contract.getId() + ": " + e.getMessage());
+            }
+        }
+        
+        // If no attachments from manifest, try link
+        if (attachments.isEmpty() && contract.getLink() != null && !contract.getLink().trim().isEmpty()) {
+            String fileName = contract.getLink();
+            if (fileName.contains("/")) {
+                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+            }
+            attachments.add(new ContractDetailDTO.AttachmentDTO(contract.getLink(), fileName, null));
+        }
+        
+        // Fallback: Check DocumentMetadata
+        if (attachments.isEmpty()) {
+            List<DocumentMetadata> documents = documentMetadataRepository.findByEntityIdAndEntityType(
+                contract.getId(), "msa_contract");
+            attachments = documents.stream()
+                .map(doc -> {
+                    String fileName = doc.getS3Key();
+                    if (fileName != null && fileName.contains("/")) {
+                        fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                    }
+                    return new ContractDetailDTO.AttachmentDTO(
+                        doc.getS3Key(),
+                        fileName,
+                        null
+                    );
+                })
+                .collect(Collectors.toList());
+        }
+        
+        dto.setAttachments(attachments);
+        
         // History
         List<ContractHistoryItemDTO> historyDTOs = history.stream()
             .map(this::convertToHistoryDTO)
@@ -144,7 +214,12 @@ public class ContractDetailService {
             : "support@landbridge.co.jp";
         
         // Load contract history (for SOW contracts, use sow_contract_id)
-        List<ContractHistory> history = contractHistoryRepository.findBySowContractIdOrderByEntryDateDesc(sow.getId());
+        // Exclude internal review entries (REVIEWED type or description containing "Review submitted")
+        List<ContractHistory> allHistory = contractHistoryRepository.findBySowContractIdOrderByEntryDateDesc(sow.getId());
+        List<ContractHistory> history = allHistory.stream()
+            .filter(h -> !"REVIEWED".equals(h.getHistoryType()) 
+                && (h.getDescription() == null || !h.getDescription().contains("Review submitted")))
+            .collect(Collectors.toList());
         
         // Load change requests (for SOW contracts, use sow_contract_id)
         List<ChangeRequest> changeRequests = changeRequestRepository.findBySowContractIdOrderByCreatedAtDesc(sow.getId());
@@ -238,6 +313,60 @@ public class ContractDetailService {
             .collect(Collectors.toList());
         dto.setChangeRequests(changeRequestDTOs);
         
+        // Load attachments from attachments_manifest
+        List<ContractDetailDTO.AttachmentDTO> attachments = new ArrayList<>();
+        
+        // First, try to load from attachments_manifest
+        if (sow.getAttachmentsManifest() != null && !sow.getAttachmentsManifest().trim().isEmpty()) {
+            try {
+                Type listType = new TypeToken<List<String>>(){}.getType();
+                List<String> attachmentLinks = gson.fromJson(sow.getAttachmentsManifest(), listType);
+                if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
+                    for (String s3Key : attachmentLinks) {
+                        if (s3Key != null && !s3Key.trim().isEmpty()) {
+                            String fileName = s3Key;
+                            if (fileName.contains("/")) {
+                                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                            }
+                            attachments.add(new ContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Error parsing attachments_manifest for SOW contract " + sow.getId() + ": " + e.getMessage());
+            }
+        }
+        
+        // If no attachments from manifest, try link
+        if (attachments.isEmpty() && sow.getLink() != null && !sow.getLink().trim().isEmpty()) {
+            String fileName = sow.getLink();
+            if (fileName.contains("/")) {
+                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+            }
+            attachments.add(new ContractDetailDTO.AttachmentDTO(sow.getLink(), fileName, null));
+        }
+        
+        // Fallback: Check DocumentMetadata
+        if (attachments.isEmpty()) {
+            List<DocumentMetadata> documents = documentMetadataRepository.findByEntityIdAndEntityType(
+                sow.getId(), "sow_contract");
+            attachments = documents.stream()
+                .map(doc -> {
+                    String fileName = doc.getS3Key();
+                    if (fileName != null && fileName.contains("/")) {
+                        fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                    }
+                    return new ContractDetailDTO.AttachmentDTO(
+                        doc.getS3Key(),
+                        fileName,
+                        null
+                    );
+                })
+                .collect(Collectors.toList());
+        }
+        
+        dto.setAttachments(attachments);
+        
         // History
         List<ContractHistoryItemDTO> historyDTOs = history.stream()
             .map(this::convertToHistoryDTO)
@@ -267,7 +396,7 @@ public class ContractDetailService {
     
     private void approveMSAContract(Contract contract, Integer contractId, Integer clientUserId) {
         // Validate contract can be approved
-        if (contract.getStatus() == Contract.ContractStatus.Approved) {
+        if (contract.getStatus() == Contract.ContractStatus.Active) {
             throw new IllegalStateException("Contract is already approved");
         }
         if (contract.getStatus() == Contract.ContractStatus.Terminated || 
@@ -278,15 +407,15 @@ public class ContractDetailService {
         // Get old status for history
         Contract.ContractStatus oldStatus = contract.getStatus();
         
-        // Update contract status
-        contract.setStatus(Contract.ContractStatus.Approved);
+        // Update contract status to Active when client approves
+        contract.setStatus(Contract.ContractStatus.Active);
         contractRepository.save(contract);
         
         // Create history entry with status change
         ContractHistory history = new ContractHistory();
         history.setContractId(contractId);
         history.setEntryDate(LocalDate.now());
-        history.setDescription(String.format("Status changed from %s to Approved by client", oldStatus.name().replace("_", " ")));
+        history.setDescription(String.format("Status changed from %s to Active by client", oldStatus.name().replace("_", " ")));
         history.setCreatedBy(clientUserId);
         history.setHistoryType("MSA");
         contractHistoryRepository.save(history);
@@ -294,7 +423,7 @@ public class ContractDetailService {
     
     private void approveSOWContract(SOWContract contract, Integer contractId, Integer clientUserId) {
         // Validate contract can be approved
-        if (contract.getStatus() == SOWContract.SOWContractStatus.Approved) {
+        if (contract.getStatus() == SOWContract.SOWContractStatus.Active) {
             throw new IllegalStateException("Contract is already approved");
         }
         if (contract.getStatus() == SOWContract.SOWContractStatus.Terminated || 
@@ -305,15 +434,15 @@ public class ContractDetailService {
         // Get old status for history
         SOWContract.SOWContractStatus oldStatus = contract.getStatus();
         
-        // Update contract status
-        contract.setStatus(SOWContract.SOWContractStatus.Approved);
+        // Update contract status to Active when client approves
+        contract.setStatus(SOWContract.SOWContractStatus.Active);
         sowContractRepository.save(contract);
         
         // Create history entry with status change
         ContractHistory history = new ContractHistory();
         history.setSowContractId(contractId);
         history.setEntryDate(LocalDate.now());
-        history.setDescription(String.format("Status changed from %s to Approved by client", oldStatus.name().replace("_", " ")));
+        history.setDescription(String.format("Status changed from %s to Active by client", oldStatus.name().replace("_", " ")));
         history.setCreatedBy(clientUserId);
         history.setHistoryType("SOW");
         contractHistoryRepository.save(history);
