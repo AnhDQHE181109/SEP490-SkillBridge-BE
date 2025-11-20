@@ -23,6 +23,8 @@ public class ChangeRequestDetailDTO {
     private List<AttachmentDTO> attachments;
     private List<HistoryItemDTO> history;
     private ImpactAnalysisDTO impactAnalysis;
+    private String internalReviewerName; // Name of internal reviewer
+    private String reviewNotes; // Review notes from Sales
 
     // Constructors
     public ChangeRequestDetailDTO() {
@@ -155,6 +157,22 @@ public class ChangeRequestDetailDTO {
 
     public void setImpactAnalysis(ImpactAnalysisDTO impactAnalysis) {
         this.impactAnalysis = impactAnalysis;
+    }
+
+    public String getInternalReviewerName() {
+        return internalReviewerName;
+    }
+
+    public void setInternalReviewerName(String internalReviewerName) {
+        this.internalReviewerName = internalReviewerName;
+    }
+
+    public String getReviewNotes() {
+        return reviewNotes;
+    }
+
+    public void setReviewNotes(String reviewNotes) {
+        this.reviewNotes = reviewNotes;
     }
 
     /**
