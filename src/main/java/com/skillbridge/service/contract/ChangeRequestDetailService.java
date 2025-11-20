@@ -55,6 +55,9 @@ public class ChangeRequestDetailService {
     private SOWContractRepository sowContractRepository;
     
     @Autowired
+    private FixedPriceBillingDetailRepository fixedPriceBillingDetailRepository;
+    
+    @Autowired
     private UserRepository userRepository;
     
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy/MM/dd");
@@ -142,6 +145,32 @@ public class ChangeRequestDetailService {
         // Get impact analysis
         String engagementType = sowContract != null ? sowContract.getEngagementType() : null;
         dto.setImpactAnalysis(getImpactAnalysis(changeRequest, engagementType));
+        
+        // Get internal reviewer name
+        String internalReviewerName = null;
+        if (changeRequest.getInternalReviewerId() != null) {
+            Optional<User> reviewer = userRepository.findById(changeRequest.getInternalReviewerId());
+            if (reviewer.isPresent()) {
+                internalReviewerName = reviewer.get().getFullName();
+            }
+        }
+        dto.setInternalReviewerName(internalReviewerName);
+        
+        // Get review notes from history (look for "REVIEWED" action with notes)
+        // Review notes are appended to the action string in format: "... Notes: <notes>"
+        String reviewNotes = null;
+        for (ChangeRequestHistory hist : history) {
+            if (hist.getAction() != null && hist.getAction().contains("REVIEWED")) {
+                String action = hist.getAction();
+                if (action != null && action.contains("Notes:")) {
+                    int notesIndex = action.indexOf("Notes:");
+                    if (notesIndex >= 0) {
+                        reviewNotes = action.substring(notesIndex + 6).trim();
+                    }
+                }
+            }
+        }
+        dto.setReviewNotes(reviewNotes);
         
         return dto;
     }
@@ -242,7 +271,7 @@ public class ChangeRequestDetailService {
     }
     
     /**
-     * Approve change request (Under Review -> Active)
+     * Approve change request (Under Review or Client Under Review -> Active)
      */
     @Transactional
     public void approveChangeRequest(
@@ -252,9 +281,9 @@ public class ChangeRequestDetailService {
     ) {
         ChangeRequest changeRequest = validateAndGetChangeRequest(contractId, changeRequestId, clientUserId);
         
-        // Validate status is "Under Review"
-        if (!"Under Review".equals(changeRequest.getStatus())) {
-            throw new IllegalStateException("Only Under Review change requests can be approved");
+        // Validate status is "Under Review" or "Client Under Review"
+        if (!"Under Review".equals(changeRequest.getStatus()) && !"Client Under Review".equals(changeRequest.getStatus())) {
+            throw new IllegalStateException("Only Under Review or Client Under Review change requests can be approved");
         }
         
         // Change status to "Active"
@@ -263,10 +292,131 @@ public class ChangeRequestDetailService {
         
         // Log history
         logHistory(changeRequestId, "Approved", clientUserId);
+        
+        // For SOW Fixed Price contracts, create billing detail when approved
+        if ("SOW".equals(changeRequest.getContractType()) && changeRequest.getSowContractId() != null) {
+            SOWContract sowContract = sowContractRepository.findById(changeRequest.getSowContractId())
+                .orElse(null);
+            
+            if (sowContract != null && "Fixed Price".equals(sowContract.getEngagementType())) {
+                // Check if impact analysis data exists (newEndDate and cost)
+                // Use costEstimatedByLandbridge if available, otherwise fallback to expectedExtraCost or amount
+                BigDecimal costToUse = changeRequest.getCostEstimatedByLandbridge();
+                if (costToUse == null) {
+                    costToUse = changeRequest.getExpectedExtraCost();
+                }
+                if (costToUse == null) {
+                    costToUse = changeRequest.getAmount();
+                }
+                
+                if (changeRequest.getNewEndDate() != null && costToUse != null) {
+                    // Ensure costEstimatedByLandbridge is set for billing detail creation
+                    if (changeRequest.getCostEstimatedByLandbridge() == null) {
+                        changeRequest.setCostEstimatedByLandbridge(costToUse);
+                        changeRequestRepository.save(changeRequest);
+                    }
+                    createBillingDetailForFixedPriceSOW(changeRequest, sowContract);
+                }
+            }
+        }
     }
     
     /**
-     * Request for change (Under Review -> Request for Change)
+     * Create billing detail for Fixed Price SOW change request when approved
+     */
+    private void createBillingDetailForFixedPriceSOW(ChangeRequest changeRequest, SOWContract sowContract) {
+        try {
+            // Get MSA contract to get billing day
+            Contract msaContract = contractRepository.findById(sowContract.getParentMsaId())
+                .orElse(null);
+            
+            String billingDay = null;
+            if (msaContract != null) {
+                billingDay = msaContract.getBillingDay();
+            } else {
+                // Fallback to SOW contract's billing day if MSA not found
+                billingDay = sowContract.getBillingDay();
+            }
+            
+            // Calculate invoice date based on newEndDate and billing day
+            LocalDate invoiceDate = calculateInvoiceDate(changeRequest.getNewEndDate(), billingDay);
+            
+            // Create FixedPriceBillingDetail
+            FixedPriceBillingDetail billingDetail = new FixedPriceBillingDetail();
+            billingDetail.setSowContractId(sowContract.getId());
+            billingDetail.setBillingName(changeRequest.getTitle() != null ? changeRequest.getTitle() : "Change Request Payment");
+            billingDetail.setMilestone(changeRequest.getNewEndDate() != null ? 
+                changeRequest.getNewEndDate().format(DATE_FORMATTER) : null);
+            billingDetail.setAmount(changeRequest.getCostEstimatedByLandbridge());
+            billingDetail.setPercentage(null); // Percentage is null for change requests
+            billingDetail.setInvoiceDate(invoiceDate);
+            billingDetail.setChangeRequestId(changeRequest.getId());
+            
+            fixedPriceBillingDetailRepository.save(billingDetail);
+            
+            logger.info("Created billing detail for Fixed Price SOW change request: CR-{}, SOW-{}", 
+                changeRequest.getChangeRequestId(), sowContract.getId());
+        } catch (Exception e) {
+            logger.error("Error creating billing detail for Fixed Price SOW change request: {}", e.getMessage(), e);
+            // Don't throw exception to avoid rolling back the approval
+        }
+    }
+    
+    /**
+     * Calculate invoice date based on planned end date and billing day
+     * Logic: If planned day > billing day, use billing day of next month, else use billing day of current month
+     */
+    private LocalDate calculateInvoiceDate(LocalDate plannedEndDate, String billingDay) {
+        if (plannedEndDate == null) {
+            return LocalDate.now();
+        }
+        
+        if (billingDay == null || billingDay.trim().isEmpty()) {
+            return plannedEndDate;
+        }
+        
+        int plannedYear = plannedEndDate.getYear();
+        int plannedMonth = plannedEndDate.getMonthValue();
+        int plannedDay = plannedEndDate.getDayOfMonth();
+        
+        // Parse billing day
+        int billingDayNumber;
+        String billingDayLower = billingDay.toLowerCase();
+        if (billingDayLower.contains("last business day") || billingDayLower.contains("last")) {
+            // For "Last business day", use the last day of the month
+            LocalDate lastDayOfMonth = LocalDate.of(plannedYear, plannedMonth, 1)
+                .withDayOfMonth(LocalDate.of(plannedYear, plannedMonth, 1).lengthOfMonth());
+            billingDayNumber = lastDayOfMonth.getDayOfMonth();
+        } else {
+            // Try to extract number from billing day (e.g., "15", "15th", "Day 15")
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\d+");
+            java.util.regex.Matcher matcher = pattern.matcher(billingDay);
+            if (matcher.find()) {
+                billingDayNumber = Integer.parseInt(matcher.group());
+            } else {
+                billingDayNumber = plannedDay;
+            }
+        }
+        
+        // Determine invoice date
+        LocalDate invoiceDate;
+        if (plannedDay > billingDayNumber) {
+            // Planned End > Billing Day: use Billing Day of next month
+            invoiceDate = LocalDate.of(plannedYear, plannedMonth, 1)
+                .plusMonths(1)
+                .withDayOfMonth(Math.min(billingDayNumber, 
+                    LocalDate.of(plannedYear, plannedMonth, 1).plusMonths(1).lengthOfMonth()));
+        } else {
+            // Planned End <= Billing Day: use Billing Day of current month
+            invoiceDate = LocalDate.of(plannedYear, plannedMonth, 
+                Math.min(billingDayNumber, LocalDate.of(plannedYear, plannedMonth, 1).lengthOfMonth()));
+        }
+        
+        return invoiceDate;
+    }
+    
+    /**
+     * Request for change (Under Review or Client Under Review -> Request for Change)
      */
     @Transactional
     public void requestForChange(
@@ -277,9 +427,9 @@ public class ChangeRequestDetailService {
     ) {
         ChangeRequest changeRequest = validateAndGetChangeRequest(contractId, changeRequestId, clientUserId);
         
-        // Validate status is "Under Review"
-        if (!"Under Review".equals(changeRequest.getStatus())) {
-            throw new IllegalStateException("Only Under Review change requests can be requested for change");
+        // Validate status is "Under Review" or "Client Under Review"
+        if (!"Under Review".equals(changeRequest.getStatus()) && !"Client Under Review".equals(changeRequest.getStatus())) {
+            throw new IllegalStateException("Only Under Review or Client Under Review change requests can be requested for change");
         }
         
         // Change status to "Request for Change"

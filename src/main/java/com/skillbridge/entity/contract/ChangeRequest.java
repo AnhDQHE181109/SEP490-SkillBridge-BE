@@ -89,6 +89,9 @@ public class ChangeRequest {
     @Column(name = "created_by")
     private Integer createdBy; // User ID who created the change request
 
+    @Column(name = "internal_reviewer_id")
+    private Integer internalReviewerId; // User ID of the internal reviewer assigned to review the change request
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -269,6 +272,14 @@ public class ChangeRequest {
 
     public void setCreatedBy(Integer createdBy) {
         this.createdBy = createdBy;
+    }
+
+    public Integer getInternalReviewerId() {
+        return internalReviewerId;
+    }
+
+    public void setInternalReviewerId(Integer internalReviewerId) {
+        this.internalReviewerId = internalReviewerId;
     }
 
     public LocalDateTime getCreatedAt() {
