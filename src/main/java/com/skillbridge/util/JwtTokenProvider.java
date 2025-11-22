@@ -35,7 +35,7 @@ public class JwtTokenProvider {
         claims.put("userId", user.getId());
         claims.put("email", user.getEmail());
         claims.put("role", user.getRole());
-        
+
         return createToken(claims, user.getEmail());
     }
 
@@ -120,6 +120,14 @@ public class JwtTokenProvider {
     public Boolean validateToken(String token, User user) {
         final String username = getUsernameFromToken(token);
         return (username.equals(user.getEmail()) && !isTokenExpired(token));
+    }
+
+    /**
+     * Extract email from token
+     * Note: The subject of the token is the email, so this is an alias for getUsernameFromToken
+     */
+    public String getEmailFromToken(String token) {
+        return getUsernameFromToken(token);
     }
 }
 
