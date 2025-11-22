@@ -17,6 +17,12 @@ public class Proposal {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
+    @Column(name = "version")
+    private Integer version = 1;
+
+    @Column(name = "is_current")
+    private Boolean isCurrent = false;
+
     @Column(name = "title", length = 255, nullable = false)
     private String title;
 
@@ -26,11 +32,29 @@ public class Proposal {
     @Column(name = "reviewer_id")
     private Integer reviewerId;
 
-    @Column(name = "contact_id", nullable = false)
-    private Integer contactId;
+    @Column(name = "contact_id")
+    private Integer contactId; // Can be null if created from opportunity
+
+    @Column(name = "opportunity_id")
+    private Integer opportunityId; // Foreign key to opportunities table
+
+    @Column(name = "review_notes", columnDefinition = "TEXT")
+    private String reviewNotes; // Review notes from assigned reviewer
+
+    @Column(name = "review_action", length = 32)
+    private String reviewAction; // APPROVE, REQUEST_REVISION, REJECT
+
+    @Column(name = "review_submitted_at")
+    private LocalDateTime reviewSubmittedAt; // When review was submitted
 
     @Column(name = "link", length = 500)
-    private String link; // Link to S3 document
+    private String link; // Link to S3 document (first file)
+
+    @Column(name = "attachments_manifest", columnDefinition = "TEXT")
+    private String attachmentsManifest; // JSON string containing array of file links
+
+    @Column(name = "client_feedback", columnDefinition = "TEXT")
+    private String clientFeedback; // Feedback from client
 
     @Column(name = "created_by", nullable = false)
     private Integer createdBy;
@@ -41,10 +65,15 @@ public class Proposal {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    // Many-to-One relationship with Contact
+    // Many-to-One relationship with Contact (optional, for backward compatibility)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "contact_id", insertable = false, updatable = false)
     private Contact contact;
+
+    // Many-to-One relationship with Opportunity
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "opportunity_id", insertable = false, updatable = false)
+    private com.skillbridge.entity.opportunity.Opportunity opportunity;
 
     // Many-to-One relationship with User (reviewer - sales manager)
     @ManyToOne(fetch = FetchType.LAZY)
@@ -166,6 +195,78 @@ public class Proposal {
 
     public void setCreator(User creator) {
         this.creator = creator;
+    }
+
+    public Integer getOpportunityId() {
+        return opportunityId;
+    }
+
+    public void setOpportunityId(Integer opportunityId) {
+        this.opportunityId = opportunityId;
+    }
+
+    public String getReviewNotes() {
+        return reviewNotes;
+    }
+
+    public void setReviewNotes(String reviewNotes) {
+        this.reviewNotes = reviewNotes;
+    }
+
+    public String getReviewAction() {
+        return reviewAction;
+    }
+
+    public void setReviewAction(String reviewAction) {
+        this.reviewAction = reviewAction;
+    }
+
+    public LocalDateTime getReviewSubmittedAt() {
+        return reviewSubmittedAt;
+    }
+
+    public void setReviewSubmittedAt(LocalDateTime reviewSubmittedAt) {
+        this.reviewSubmittedAt = reviewSubmittedAt;
+    }
+
+    public String getAttachmentsManifest() {
+        return attachmentsManifest;
+    }
+
+    public void setAttachmentsManifest(String attachmentsManifest) {
+        this.attachmentsManifest = attachmentsManifest;
+    }
+
+    public com.skillbridge.entity.opportunity.Opportunity getOpportunity() {
+        return opportunity;
+    }
+
+    public void setOpportunity(com.skillbridge.entity.opportunity.Opportunity opportunity) {
+        this.opportunity = opportunity;
+    }
+
+    public Integer getVersion() {
+        return version;
+    }
+
+    public void setVersion(Integer version) {
+        this.version = version;
+    }
+
+    public Boolean getIsCurrent() {
+        return isCurrent;
+    }
+
+    public void setIsCurrent(Boolean isCurrent) {
+        this.isCurrent = isCurrent;
+    }
+
+    public String getClientFeedback() {
+        return clientFeedback;
+    }
+
+    public void setClientFeedback(String clientFeedback) {
+        this.clientFeedback = clientFeedback;
     }
 }
 
