@@ -9,10 +9,23 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
 public interface SOWContractRepository extends JpaRepository<SOWContract, Integer>, JpaSpecificationExecutor<SOWContract> {
+    
+    /**
+     * Find maximum version number for contracts with the same parent version ID
+     */
+    @Query("SELECT MAX(s.version) FROM SOWContract s WHERE s.parentVersionId = :parentVersionId OR (s.parentVersionId IS NULL AND s.id = :parentVersionId)")
+    Integer findMaxVersionByParentVersionId(@Param("parentVersionId") Integer parentVersionId);
+    
+    /**
+     * Find all versions of a contract (by parent version ID or original ID)
+     */
+    @Query("SELECT s FROM SOWContract s WHERE s.parentVersionId = :parentVersionId OR (s.parentVersionId IS NULL AND s.id = :parentVersionId) ORDER BY s.version ASC")
+    List<SOWContract> findAllVersionsByParentVersionId(@Param("parentVersionId") Integer parentVersionId);
     
     @Query("SELECT s FROM SOWContract s WHERE s.clientId = :clientId " +
            "AND (:search IS NULL OR s.contractName LIKE CONCAT('%', :search, '%') OR " +

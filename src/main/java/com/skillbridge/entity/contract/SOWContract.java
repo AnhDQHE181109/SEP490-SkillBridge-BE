@@ -49,6 +49,9 @@ public class SOWContract {
     @Column(name = "value", precision = 16, scale = 2)
     private BigDecimal value;
 
+    @Column(name = "base_total_amount", precision = 16, scale = 2)
+    private BigDecimal baseTotalAmount; // Original contract value (for Retainer baseline)
+
     @Column(name = "assignee_id", length = 50)
     private String assigneeId;
 
@@ -94,6 +97,13 @@ public class SOWContract {
 
     @Column(name = "attachments_manifest", columnDefinition = "TEXT")
     private String attachmentsManifest; // JSON string containing array of file links
+
+    // Versioning fields for Retainer SOW contracts
+    @Column(name = "version", nullable = false)
+    private Integer version = 1; // Version number (V1, V2, V3, etc.)
+
+    @Column(name = "parent_version_id")
+    private Integer parentVersionId; // Reference to parent version (null for V1)
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -203,6 +213,14 @@ public class SOWContract {
 
     public void setValue(BigDecimal value) {
         this.value = value;
+    }
+
+    public BigDecimal getBaseTotalAmount() {
+        return baseTotalAmount;
+    }
+
+    public void setBaseTotalAmount(BigDecimal baseTotalAmount) {
+        this.baseTotalAmount = baseTotalAmount;
     }
 
     public String getAssigneeId() {
@@ -331,6 +349,22 @@ public class SOWContract {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public Integer getVersion() {
+        return version;
+    }
+
+    public void setVersion(Integer version) {
+        this.version = version;
+    }
+
+    public Integer getParentVersionId() {
+        return parentVersionId;
+    }
+
+    public void setParentVersionId(Integer parentVersionId) {
+        this.parentVersionId = parentVersionId;
     }
 
     // Enums
