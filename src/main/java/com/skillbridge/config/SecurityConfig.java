@@ -35,6 +35,7 @@ public class SecurityConfig {
                 .requestMatchers("/public/**").permitAll()
                 .requestMatchers("/auth/**").permitAll() // Authentication endpoints
                 .requestMatchers("/sales/auth/**").permitAll() // Sales authentication endpoints (context-path /api is already applied)
+                .requestMatchers("/admin/auth/**").permitAll() // Admin authentication endpoints (context-path /api is already applied)
                 .requestMatchers("/actuator/**").permitAll()
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/error").permitAll() // Allow error endpoint to return error responses without authentication
