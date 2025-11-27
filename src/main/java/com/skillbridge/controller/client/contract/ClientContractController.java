@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -117,6 +118,38 @@ public class ClientContractController {
             logger.error("Error fetching contract detail: contractId={}, userId={}", contractId, userId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse("Failed to fetch contract detail: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Get all versions of a SOW contract for client
+     * GET /api/client/contracts/{contractId}/versions
+     */
+    @GetMapping("/{contractId}/versions")
+    public ResponseEntity<?> getSOWContractVersions(
+        @PathVariable Integer contractId,
+        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+    ) {
+        try {
+            logger.info("GET /client/contracts/{}/versions - userId: {}", contractId, userId);
+            
+            if (userId == null) {
+                userId = 1; // Temporary default for testing
+                logger.warn("No userId provided, using default userId: 1");
+            }
+            
+            List<ContractDetailDTO> versions = contractDetailService.getSOWContractVersions(contractId, userId);
+            logger.info("Successfully retrieved {} versions for contractId: {}, userId: {}", versions.size(), contractId, userId);
+            return ResponseEntity.ok(versions);
+            
+        } catch (jakarta.persistence.EntityNotFoundException e) {
+            logger.error("Contract not found: contractId={}, userId={}", contractId, userId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse("Contract not found"));
+        } catch (Exception e) {
+            logger.error("Error fetching contract versions: contractId={}, userId={}", contractId, userId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new ErrorResponse("Failed to fetch contract versions: " + e.getMessage()));
         }
     }
     
