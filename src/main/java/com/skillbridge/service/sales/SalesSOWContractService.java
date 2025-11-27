@@ -32,6 +32,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
@@ -50,6 +52,8 @@ import java.util.Optional;
 @Service
 @Transactional
 public class SalesSOWContractService {
+    
+    private static final Logger logger = LoggerFactory.getLogger(SalesSOWContractService.class);
     
     @Autowired
     private SOWContractRepository sowContractRepository;
@@ -104,6 +108,18 @@ public class SalesSOWContractService {
     
     @Autowired
     private ChangeRequestHistoryRepository changeRequestHistoryRepository;
+    
+    @Autowired
+    private SOWBaselineService sowBaselineService;
+    
+    @Autowired
+    private CREventService crEventService;
+    
+    @Autowired
+    private ContractAppendixService contractAppendixService;
+    
+    @Autowired
+    private CRBillingEventRepository crBillingEventRepository;
     
     private final Gson gson = new Gson();
     
@@ -338,8 +354,151 @@ public class SalesSOWContractService {
     }
     
     /**
+     * Update SOW contract (for Request_for_Change status only - allows updating Engaged Engineers and Billing Details)
+     */
+    @Transactional
+    public SOWContractDTO updateSOWContract(Integer contractId, CreateSOWRequest request, MultipartFile[] attachments, User currentUser) {
+        // Find existing contract
+        SOWContract contract = sowContractRepository.findById(contractId)
+            .orElseThrow(() -> new RuntimeException("SOW Contract not found"));
+        
+        // Check access permission (Sales Manager sees all, Sales Rep sees only assigned)
+        if (!"SALES_MANAGER".equals(currentUser.getRole())) {
+            if (contract.getAssigneeUserId() == null || !contract.getAssigneeUserId().equals(currentUser.getId())) {
+                throw new RuntimeException("Access denied: You can only update contracts assigned to you");
+            }
+        }
+        
+        // Only allow update when status is Draft or Request_for_Change
+        if (contract.getStatus() != SOWContract.SOWContractStatus.Draft && 
+            contract.getStatus() != SOWContract.SOWContractStatus.Request_for_Change) {
+            throw new RuntimeException("SOW Contract can only be updated when status is Draft or Request for Change. Current status: " + contract.getStatus().name());
+        }
+        
+        // When status is Request_for_Change, only allow updating Engaged Engineers and Billing Details for Retainer contracts
+        if (contract.getStatus() == SOWContract.SOWContractStatus.Request_for_Change) {
+            if (!"Retainer".equals(contract.getEngagementType())) {
+                throw new RuntimeException("Only Retainer SOW contracts can be updated when status is Request for Change");
+            }
+            
+            // Update Engaged Engineers if provided
+            if (request.getEngagedEngineers() != null && !request.getEngagedEngineers().isEmpty()) {
+                // Delete existing engaged engineers for future dates (after today)
+                LocalDate today = LocalDate.now();
+                List<SOWEngagedEngineer> existingEngineers = sowEngagedEngineerRepository.findBySowContractId(contractId);
+                for (SOWEngagedEngineer existing : existingEngineers) {
+                    // Delete engineers with start date in the future
+                    if (existing.getStartDate() != null && existing.getStartDate().isAfter(today)) {
+                        sowEngagedEngineerRepository.delete(existing);
+                    }
+                }
+                
+                // Create new engaged engineers from request
+                createSOWEngagedEngineers(contractId, request.getEngagedEngineers());
+            }
+            
+            // Update Billing Details if provided (for Retainer)
+            if (request.getBillingDetails() != null && !request.getBillingDetails().isEmpty()) {
+                // Delete existing billing details for future dates (after today)
+                LocalDate today = LocalDate.now();
+                List<RetainerBillingDetail> existingBilling = retainerBillingDetailRepository.findBySowContractIdOrderByPaymentDateDesc(contractId);
+                for (RetainerBillingDetail existing : existingBilling) {
+                    // Delete billing with payment date in the future
+                    if (existing.getPaymentDate() != null && existing.getPaymentDate().isAfter(today)) {
+                        retainerBillingDetailRepository.delete(existing);
+                    }
+                }
+                
+                // Create new billing details from request using existing method
+                createRetainerBillingDetails(contractId, request.getBillingDetails());
+            }
+            
+            // Create history entry
+            createHistoryEntry(contract.getId(), "UPDATED", 
+                "SOW Contract Engaged Engineers and Billing Details updated by " + currentUser.getFullName() + " (Request for Change)", 
+                null, null, currentUser.getId());
+        } else {
+            // For Draft status, allow full update (similar to create but update existing)
+            // This is similar to updateMSAContract logic
+            // For now, we'll focus on Request_for_Change update only
+            throw new RuntimeException("Full update for Draft status is not yet implemented. Please use create endpoint for new contracts.");
+        }
+        
+        // Upload new attachments if any
+        if (attachments != null && attachments.length > 0) {
+            List<String> fileLinks = uploadAttachments(contractId, attachments, currentUser.getId());
+            if (!fileLinks.isEmpty()) {
+                contract = sowContractRepository.findById(contractId)
+                    .orElseThrow(() -> new RuntimeException("Contract not found after save"));
+                
+                List<String> existingLinks = new ArrayList<>();
+                if (contract.getAttachmentsManifest() != null && !contract.getAttachmentsManifest().trim().isEmpty()) {
+                    try {
+                        Type listType = new TypeToken<List<String>>(){}.getType();
+                        existingLinks = gson.fromJson(contract.getAttachmentsManifest(), listType);
+                    } catch (Exception e) {
+                        System.out.println("Error parsing attachments manifest: " + e.getMessage());
+                    }
+                }
+                
+                existingLinks.addAll(fileLinks);
+                contract.setAttachmentsManifest(gson.toJson(existingLinks));
+                contract = sowContractRepository.save(contract);
+            }
+        }
+        
+        // Reload contract to get latest state
+        contract = sowContractRepository.findById(contractId)
+            .orElseThrow(() -> new RuntimeException("Contract not found after update"));
+        
+        // Convert to DTO
+        SOWContractDTO dto = new SOWContractDTO();
+        dto.setId(contract.getId());
+        dto.setContractId(generateContractId(contract.getId(), contract.getCreatedAt()));
+        dto.setContractName(contract.getContractName());
+        dto.setStatus(contract.getStatus().name().replace("_", " "));
+        
+        return dto;
+    }
+    
+    /**
      * Get SOW contract detail
      */
+    /**
+     * Get all versions of a SOW contract
+     */
+    public List<SOWContractDetailDTO> getSOWContractVersions(Integer contractId, User currentUser) {
+        SOWContract contract = sowContractRepository.findById(contractId)
+            .orElseThrow(() -> new RuntimeException("SOW Contract not found"));
+        
+        // Check access permission (Sales Manager sees all, Sales Rep sees only assigned)
+        if (!"SALES_MANAGER".equals(currentUser.getRole())) {
+            if (contract.getAssigneeUserId() == null || !contract.getAssigneeUserId().equals(currentUser.getId())) {
+                throw new RuntimeException("Access denied: You can only view contracts assigned to you");
+            }
+        }
+        
+        // Find the original contract ID (if this is a version, find the original)
+        Integer originalContractId = contract.getParentVersionId() != null ? contract.getParentVersionId() : contractId;
+        
+        // Get all versions
+        List<SOWContract> versions = sowContractRepository.findAllVersionsByParentVersionId(originalContractId);
+        
+        // If no versions found, return just the current contract
+        if (versions.isEmpty()) {
+            versions = java.util.Collections.singletonList(contract);
+        }
+        
+        // Convert to DTOs
+        List<SOWContractDetailDTO> versionDTOs = new ArrayList<>();
+        for (SOWContract version : versions) {
+            SOWContractDetailDTO dto = getSOWContractDetail(version.getId(), currentUser);
+            versionDTOs.add(dto);
+        }
+        
+        return versionDTOs;
+    }
+    
     public SOWContractDetailDTO getSOWContractDetail(Integer contractId, User currentUser) {
         SOWContract contract = sowContractRepository.findById(contractId)
             .orElseThrow(() -> new RuntimeException("SOW Contract not found"));
@@ -510,45 +669,123 @@ public class SalesSOWContractService {
                 deliveryItems.add(dto);
             }
             
-            // Load engaged engineers
-            List<SOWEngagedEngineer> engineers = sowEngagedEngineerRepository.findBySowContractId(contractId);
-            for (SOWEngagedEngineer engineer : engineers) {
-                SOWContractDetailDTO.EngagedEngineerDTO dto = new SOWContractDetailDTO.EngagedEngineerDTO();
-                dto.setId(engineer.getId());
-                dto.setEngineerLevel(engineer.getEngineerLevel());
-                dto.setStartDate(engineer.getStartDate() != null ? engineer.getStartDate().toString() : null);
-                dto.setEndDate(engineer.getEndDate() != null ? engineer.getEndDate().toString() : null);
-                dto.setRating(engineer.getRating() != null ? engineer.getRating().doubleValue() : null);
-                dto.setSalary(engineer.getSalary() != null ? engineer.getSalary().doubleValue() : null);
-                engagedEngineers.add(dto);
-            }
+            // EVENT-BASED APPROACH: Calculate current state from baseline + events
+            LocalDate currentDate = LocalDate.now();
             
-            // Load billing details
-            List<RetainerBillingDetail> retainerBilling = retainerBillingDetailRepository.findBySowContractIdOrderByPaymentDateDesc(contractId);
-            // Reverse to get ascending order
-            java.util.Collections.reverse(retainerBilling);
-            for (RetainerBillingDetail billing : retainerBilling) {
-                SOWContractDetailDTO.BillingDetailDTO dto = new SOWContractDetailDTO.BillingDetailDTO();
-                dto.setId(billing.getId());
-                // RetainerBillingDetail doesn't have billingName and milestone fields
-                // Try to get from delivery item if deliveryItemId is set
-                String billingName = null;
-                String milestone = null;
-                if (billing.getDeliveryItemId() != null) {
-                    Optional<DeliveryItem> deliveryItemOpt = deliveryItemRepository.findById(billing.getDeliveryItemId());
-                    if (deliveryItemOpt.isPresent()) {
-                        DeliveryItem item = deliveryItemOpt.get();
-                        milestone = item.getMilestone();
-                        billingName = item.getMilestone() + " Payment"; // Generate billing name from milestone
+            // Try to load baseline first (for event-based contracts)
+            List<SOWEngagedEngineerBase> baselineEngineers = sowBaselineService.getBaselineResources(contractId);
+            
+            if (!baselineEngineers.isEmpty()) {
+                // Event-based: Calculate current engineers from baseline + events
+                List<CREventService.CurrentEngineerState> currentEngineerStates = 
+                    crEventService.calculateCurrentResources(contractId, currentDate);
+                
+                // Convert to DTOs
+                for (CREventService.CurrentEngineerState state : currentEngineerStates) {
+                    SOWContractDetailDTO.EngagedEngineerDTO dto = new SOWContractDetailDTO.EngagedEngineerDTO();
+                    dto.setId(state.getEngineerId());
+                    dto.setEngineerLevel(state.getLevel() + " " + state.getRole()); // Combine level and role
+                    dto.setStartDate(state.getStartDate() != null ? state.getStartDate().toString() : null);
+                    dto.setEndDate(state.getEndDate() != null ? state.getEndDate().toString() : null);
+                    dto.setRating(state.getRating() != null ? state.getRating().doubleValue() : null);
+                    dto.setSalary(state.getUnitRate() != null ? state.getUnitRate().doubleValue() : null);
+                    engagedEngineers.add(dto);
+                }
+                
+                // Calculate current billing from baseline + events
+                List<RetainerBillingBase> baselineBillingList = sowBaselineService.getBaselineBilling(contractId);
+                
+                // Get all unique billing months
+                java.util.Set<LocalDate> billingMonths = new java.util.HashSet<>();
+                for (RetainerBillingBase base : baselineBillingList) {
+                    if (base.getBillingMonth() != null) {
+                        billingMonths.add(base.getBillingMonth());
                     }
                 }
-                dto.setBillingName(billingName);
-                dto.setMilestone(milestone);
-                dto.setAmount(billing.getAmount() != null ? billing.getAmount().doubleValue() : null);
-                dto.setPercentage(null); // Retainer doesn't have percentage
-                dto.setInvoiceDate(billing.getPaymentDate() != null ? billing.getPaymentDate().toString() : null);
-                dto.setDeliveryNote(billing.getDeliveryNote());
-                billingDetails.add(dto);
+                
+                // Get all billing events to find additional months
+                List<CRBillingEvent> allBillingEvents = crBillingEventRepository.findApprovedEventsBySowContractId(contractId);
+                for (CRBillingEvent event : allBillingEvents) {
+                    if (event.getBillingMonth() != null) {
+                        billingMonths.add(event.getBillingMonth());
+                    }
+                }
+                
+                // Calculate billing for each month (baseline + events)
+                for (LocalDate month : billingMonths.stream().sorted().collect(java.util.stream.Collectors.toList())) {
+                    BigDecimal totalAmount = crEventService.calculateCurrentBilling(contractId, month);
+                    
+                    SOWContractDetailDTO.BillingDetailDTO dto = new SOWContractDetailDTO.BillingDetailDTO();
+                    dto.setId(null); // No specific ID for calculated billing
+                    dto.setAmount(totalAmount != null ? totalAmount.doubleValue() : null);
+                    dto.setPercentage(null);
+                    dto.setInvoiceDate(month != null ? month.toString() : null);
+                    
+                    // Get description from baseline or events
+                    String description = "";
+                    var baselineOpt = baselineBillingList.stream()
+                        .filter(b -> b.getBillingMonth() != null && b.getBillingMonth().equals(month))
+                        .findFirst();
+                    if (baselineOpt.isPresent() && baselineOpt.get().getDescription() != null) {
+                        description = baselineOpt.get().getDescription();
+                    }
+                    
+                    // Add event descriptions
+                    List<CRBillingEvent> monthEvents = allBillingEvents.stream()
+                        .filter(e -> e.getBillingMonth() != null && e.getBillingMonth().equals(month))
+                        .collect(java.util.stream.Collectors.toList());
+                    if (!monthEvents.isEmpty()) {
+                        if (!description.isEmpty()) description += "; ";
+                        description += monthEvents.stream()
+                            .map(e -> e.getDescription() != null ? e.getDescription() : "")
+                            .collect(java.util.stream.Collectors.joining("; "));
+                    }
+                    
+                    dto.setDeliveryNote(description);
+                    billingDetails.add(dto);
+                }
+            } else {
+                // Fallback to old approach (for contracts that haven't been migrated to event-based)
+                // Load engaged engineers from old table
+                List<SOWEngagedEngineer> engineers = sowEngagedEngineerRepository.findBySowContractId(contractId);
+                for (SOWEngagedEngineer engineer : engineers) {
+                    SOWContractDetailDTO.EngagedEngineerDTO dto = new SOWContractDetailDTO.EngagedEngineerDTO();
+                    dto.setId(engineer.getId());
+                    dto.setEngineerLevel(engineer.getEngineerLevel());
+                    dto.setStartDate(engineer.getStartDate() != null ? engineer.getStartDate().toString() : null);
+                    dto.setEndDate(engineer.getEndDate() != null ? engineer.getEndDate().toString() : null);
+                    dto.setRating(engineer.getRating() != null ? engineer.getRating().doubleValue() : null);
+                    dto.setSalary(engineer.getSalary() != null ? engineer.getSalary().doubleValue() : null);
+                    engagedEngineers.add(dto);
+                }
+                
+                // Load billing details from old table
+                List<RetainerBillingDetail> retainerBilling = retainerBillingDetailRepository.findBySowContractIdOrderByPaymentDateDesc(contractId);
+                // Reverse to get ascending order
+                java.util.Collections.reverse(retainerBilling);
+                for (RetainerBillingDetail billing : retainerBilling) {
+                    SOWContractDetailDTO.BillingDetailDTO dto = new SOWContractDetailDTO.BillingDetailDTO();
+                    dto.setId(billing.getId());
+                    // RetainerBillingDetail doesn't have billingName and milestone fields
+                    // Try to get from delivery item if deliveryItemId is set
+                    String billingName = null;
+                    String milestone = null;
+                    if (billing.getDeliveryItemId() != null) {
+                        Optional<DeliveryItem> deliveryItemOpt = deliveryItemRepository.findById(billing.getDeliveryItemId());
+                        if (deliveryItemOpt.isPresent()) {
+                            DeliveryItem item = deliveryItemOpt.get();
+                            milestone = item.getMilestone();
+                            billingName = item.getMilestone() + " Payment"; // Generate billing name from milestone
+                        }
+                    }
+                    dto.setBillingName(billingName);
+                    dto.setMilestone(milestone);
+                    dto.setAmount(billing.getAmount() != null ? billing.getAmount().doubleValue() : null);
+                    dto.setPercentage(null); // Retainer doesn't have percentage
+                    dto.setInvoiceDate(billing.getPaymentDate() != null ? billing.getPaymentDate().toString() : null);
+                    dto.setDeliveryNote(billing.getDeliveryNote());
+                    billingDetails.add(dto);
+                }
             }
         }
         
@@ -620,6 +857,7 @@ public class SalesSOWContractService {
         dto.setReviewNotes(reviewNotes);
         dto.setReviewAction(reviewAction);
         dto.setHistory(history);
+        dto.setVersion(contract.getVersion()); // Set version number
         
         return dto;
     }
@@ -992,7 +1230,7 @@ public class SalesSOWContractService {
         // Validate CR type based on engagement type
         if (request.getType() != null) {
             if (isRetainer) {
-                List<String> validTypes = List.of("Extend Schedule", "Rate Change", "Increase Resource", "Other");
+                List<String> validTypes = List.of("RESOURCE_CHANGE", "SCHEDULE_CHANGE", "SCOPE_ADJUSTMENT");
                 if (!validTypes.contains(request.getType())) {
                     throw new RuntimeException("CR Type '" + request.getType() + "' is not valid for Retainer contract");
                 }
@@ -1006,7 +1244,13 @@ public class SalesSOWContractService {
         
         // Create change request entity
         ChangeRequest changeRequest = new ChangeRequest();
-        changeRequest.setSowContractId(sowContractId);
+        // For Retainer SOW with versioning:
+        // - If contract has no parent_version_id, use contract's id (V1)
+        // - If contract has parent_version_id, use parent_version_id to reference V1
+        Integer sowContractIdForCR = sowContract.getParentVersionId() != null 
+            ? sowContract.getParentVersionId() 
+            : sowContract.getId();
+        changeRequest.setSowContractId(sowContractIdForCR);
         changeRequest.setContractType("SOW");
         changeRequest.setTitle(request.getTitle());
         changeRequest.setType(request.getType());
@@ -1069,8 +1313,11 @@ public class SalesSOWContractService {
             }
         }
         
-        // Set status based on action
-        if ("submit".equalsIgnoreCase(request.getAction())) {
+        // Set status based on action and reviewAction
+        // If reviewAction is "APPROVE" and action is "submit", set status to "Client Under Review"
+        if ("submit".equalsIgnoreCase(request.getAction()) && "APPROVE".equalsIgnoreCase(request.getReviewAction())) {
+            changeRequest.setStatus("Client Under Review");
+        } else if ("submit".equalsIgnoreCase(request.getAction())) {
             changeRequest.setStatus("Under Internal Review");
         } else {
             changeRequest.setStatus("Draft");
@@ -1646,6 +1893,761 @@ public class SalesSOWContractService {
             "Change request " + actionDescription + " by " + currentUser.getFullName() + 
             (reviewNotes != null && !reviewNotes.trim().isEmpty() ? ". Notes: " + reviewNotes : ""), 
             currentUser.getId());
+    }
+    
+    /**
+     * Approve change request and apply changes to contract (for Retainer SOW) - EVENT-BASED
+     * This applies changes based on CR type: RESOURCE_CHANGE, SCHEDULE_CHANGE, SCOPE_ADJUSTMENT
+     * Creates events instead of new contract version
+     */
+    @Transactional
+    public void approveChangeRequestForSOW(
+        Integer sowContractId,
+        Integer changeRequestId,
+        String reviewNotes,
+        User currentUser
+    ) {
+        SOWContract sowContract = sowContractRepository.findById(sowContractId)
+            .orElseThrow(() -> new RuntimeException("SOW Contract not found"));
+        
+        ChangeRequest changeRequest = changeRequestRepository.findById(changeRequestId)
+            .orElseThrow(() -> new RuntimeException("Change request not found"));
+        
+        if (!changeRequest.getSowContractId().equals(sowContractId) || !"SOW".equals(changeRequest.getContractType())) {
+            throw new RuntimeException("Change request does not belong to this SOW contract");
+        }
+        
+        // Verify engagement type is Retainer
+        String engagementType = sowContract.getEngagementType();
+        if (engagementType == null || (!engagementType.equals("Retainer") && !engagementType.equals("Retainer_"))) {
+            throw new RuntimeException("This operation is only for Retainer SOW contracts");
+        }
+        
+        // Allow approve for "Processing" status (CRs created by client and reviewed by Sales)
+        // Also allow "Under Review" and "Client Under Review" (for client approval flow)
+        if (!"Processing".equals(changeRequest.getStatus()) 
+            && !"Under Review".equals(changeRequest.getStatus())
+            && !"Client Under Review".equals(changeRequest.getStatus())) {
+            throw new RuntimeException("Only Processing, Under Review, or Client Under Review change requests can be approved");
+        }
+        
+        LocalDate effectiveStart = changeRequest.getEffectiveFrom();
+        if (effectiveStart == null) {
+            throw new RuntimeException("Effective start date is required");
+        }
+        
+        // Ensure baseline exists (create if not exists)
+        sowBaselineService.createBaseline(sowContractId);
+        
+        String crType = changeRequest.getType();
+        
+        // Create events based on CR type (EVENT-BASED APPROACH)
+        if ("RESOURCE_CHANGE".equals(crType)) {
+            applyResourceChangeEventBased(sowContractId, changeRequest, effectiveStart, currentUser);
+        } else if ("SCHEDULE_CHANGE".equals(crType)) {
+            applyScheduleChangeEventBased(sowContract, changeRequest, effectiveStart, currentUser);
+        } else if ("SCOPE_ADJUSTMENT".equals(crType)) {
+            applyScopeAdjustmentEventBased(sowContractId, changeRequest, effectiveStart, currentUser);
+        } else if ("RATE_ADJUSTMENT".equals(crType)) {
+            applyRateAdjustmentEventBased(sowContractId, changeRequest, effectiveStart, currentUser);
+        } else {
+            throw new RuntimeException("Unsupported CR type: " + crType);
+        }
+        
+        // Generate appendix
+        ContractAppendix appendix = contractAppendixService.generateAppendix(changeRequest);
+        
+        // Update CR status to APPROVED
+        changeRequest.setStatus("Approved");
+        changeRequest.setApprovedBy(currentUser.getId());
+        changeRequest.setApprovedAt(LocalDateTime.now());
+        if (reviewNotes != null && !reviewNotes.trim().isEmpty()) {
+            changeRequest.setSalesInternalNote(reviewNotes);
+        }
+        changeRequestRepository.save(changeRequest);
+        
+        // Create history entry
+        createChangeRequestHistoryEntry(changeRequestId, "APPROVED",
+            "Change request approved by " + currentUser.getFullName() + 
+            (reviewNotes != null && !reviewNotes.trim().isEmpty() ? ". Notes: " + reviewNotes : "") +
+            ". Appendix " + appendix.getAppendixNumber() + " created.", 
+            currentUser.getId());
+    }
+    
+    /**
+     * Clone SOW contract to create a new version
+     */
+    private SOWContract cloneSOWContractForNewVersion(SOWContract original) {
+        // Get the latest version number for this contract family
+        Integer maxVersion = sowContractRepository.findMaxVersionByParentVersionId(original.getParentVersionId() != null ? 
+            original.getParentVersionId() : original.getId());
+        Integer newVersionNumber = maxVersion != null ? maxVersion + 1 : original.getVersion() + 1;
+        
+        // Create new version
+        SOWContract newVersion = new SOWContract();
+        newVersion.setClientId(original.getClientId());
+        newVersion.setContractName(original.getContractName());
+        newVersion.setStatus(original.getStatus());
+        newVersion.setEngagementType(original.getEngagementType());
+        newVersion.setParentMsaId(original.getParentMsaId());
+        newVersion.setProjectName(original.getProjectName());
+        newVersion.setScopeSummary(original.getScopeSummary());
+        newVersion.setPeriodStart(original.getPeriodStart());
+        newVersion.setPeriodEnd(original.getPeriodEnd());
+        newVersion.setValue(original.getValue());
+        newVersion.setAssigneeId(original.getAssigneeId());
+        newVersion.setAssigneeUserId(original.getAssigneeUserId());
+        newVersion.setReviewerId(original.getReviewerId());
+        newVersion.setCurrency(original.getCurrency());
+        newVersion.setPaymentTerms(original.getPaymentTerms());
+        newVersion.setInvoicingCycle(original.getInvoicingCycle());
+        newVersion.setBillingDay(original.getBillingDay());
+        newVersion.setTaxWithholding(original.getTaxWithholding());
+        newVersion.setIpOwnership(original.getIpOwnership());
+        newVersion.setGoverningLaw(original.getGoverningLaw());
+        newVersion.setLandbridgeContactName(original.getLandbridgeContactName());
+        newVersion.setLandbridgeContactEmail(original.getLandbridgeContactEmail());
+        newVersion.setLink(original.getLink());
+        newVersion.setAttachmentsManifest(original.getAttachmentsManifest());
+        newVersion.setVersion(newVersionNumber);
+        newVersion.setParentVersionId(original.getParentVersionId() != null ? original.getParentVersionId() : original.getId());
+        
+        newVersion = sowContractRepository.save(newVersion);
+        
+        // Note: Engaged engineers and billing details will be populated from the approved CR
+        // They are NOT cloned from the original version
+        
+        return newVersion;
+    }
+    
+    /**
+     * Reject change request without applying changes (for Retainer SOW)
+     */
+    @Transactional
+    public void rejectChangeRequestForSOW(
+        Integer sowContractId,
+        Integer changeRequestId,
+        String reason,
+        User currentUser
+    ) {
+        SOWContract sowContract = sowContractRepository.findById(sowContractId)
+            .orElseThrow(() -> new RuntimeException("SOW Contract not found"));
+        
+        ChangeRequest changeRequest = changeRequestRepository.findById(changeRequestId)
+            .orElseThrow(() -> new RuntimeException("Change request not found"));
+        
+        if (!changeRequest.getSowContractId().equals(sowContractId) || !"SOW".equals(changeRequest.getContractType())) {
+            throw new RuntimeException("Change request does not belong to this SOW contract");
+        }
+        
+        // Allow reject for "Processing" status
+        if (!"Processing".equals(changeRequest.getStatus())) {
+            throw new RuntimeException("Only Processing change requests can be rejected");
+        }
+        
+        // Update CR status to REJECTED
+        changeRequest.setStatus("Rejected");
+        if (reason != null && !reason.trim().isEmpty()) {
+            changeRequest.setReason((changeRequest.getReason() != null ? changeRequest.getReason() + "\n\n" : "") + 
+                "Rejection reason: " + reason);
+        }
+        changeRequestRepository.save(changeRequest);
+        
+        // Create history entry
+        createChangeRequestHistoryEntry(changeRequestId, "REJECTED", 
+            "Change request rejected by " + currentUser.getFullName() + 
+            (reason != null && !reason.trim().isEmpty() ? ". Reason: " + reason : ""), 
+            currentUser.getId());
+    }
+    
+    /**
+     * Get preview of changes (Before/After comparison) for change request
+     * Returns current state vs proposed state
+     */
+    public java.util.Map<String, Object> getChangeRequestPreviewForSOW(
+        Integer sowContractId,
+        Integer changeRequestId,
+        User currentUser
+    ) {
+        SOWContract sowContract = sowContractRepository.findById(sowContractId)
+            .orElseThrow(() -> new RuntimeException("SOW Contract not found"));
+        
+        ChangeRequest changeRequest = changeRequestRepository.findById(changeRequestId)
+            .orElseThrow(() -> new RuntimeException("Change request not found"));
+        
+        if (!changeRequest.getSowContractId().equals(sowContractId) || !"SOW".equals(changeRequest.getContractType())) {
+            throw new RuntimeException("Change request does not belong to this SOW contract");
+        }
+        
+        LocalDate effectiveStart = changeRequest.getEffectiveFrom();
+        if (effectiveStart == null) {
+            throw new RuntimeException("Effective start date is required");
+        }
+        
+        // Get current state (Before)
+        List<SOWEngagedEngineer> currentEngineers = sowEngagedEngineerRepository.findBySowContractId(sowContractId);
+        List<RetainerBillingDetail> currentBilling = retainerBillingDetailRepository.findBySowContractIdOrderByPaymentDateDesc(sowContractId);
+        
+        // Get proposed changes from CR
+        List<ChangeRequestEngagedEngineer> crEngineers = changeRequestEngagedEngineerRepository.findByChangeRequestId(changeRequestId);
+        List<ChangeRequestBillingDetail> crBilling = changeRequestBillingDetailRepository.findByChangeRequestId(changeRequestId);
+        
+        // Build preview response
+        java.util.Map<String, Object> preview = new java.util.HashMap<>();
+        
+        // Resources Before/After
+        java.util.List<java.util.Map<String, Object>> resourcesBefore = new ArrayList<>();
+        for (SOWEngagedEngineer eng : currentEngineers) {
+            if (eng.getEndDate() == null || !eng.getEndDate().isBefore(effectiveStart)) {
+                java.util.Map<String, Object> engMap = new java.util.HashMap<>();
+                engMap.put("id", eng.getId());
+                engMap.put("engineerLevel", eng.getEngineerLevel());
+                engMap.put("startDate", eng.getStartDate() != null ? eng.getStartDate().toString() : null);
+                engMap.put("endDate", eng.getEndDate() != null ? eng.getEndDate().toString() : null);
+                engMap.put("rating", eng.getRating() != null ? eng.getRating().doubleValue() : null);
+                engMap.put("salary", eng.getSalary() != null ? eng.getSalary().doubleValue() : null);
+                resourcesBefore.add(engMap);
+            }
+        }
+        
+        java.util.List<java.util.Map<String, Object>> resourcesAfter = new ArrayList<>();
+        // Apply proposed changes to build "After" state
+        // This is a simplified version - in production, you'd need more sophisticated logic
+        resourcesAfter.addAll(resourcesBefore);
+        for (ChangeRequestEngagedEngineer crEng : crEngineers) {
+            java.util.Map<String, Object> engMap = new java.util.HashMap<>();
+            engMap.put("id", crEng.getId());
+            engMap.put("engineerLevel", crEng.getEngineerLevel());
+            engMap.put("startDate", crEng.getStartDate() != null ? crEng.getStartDate().toString() : null);
+            engMap.put("endDate", crEng.getEndDate() != null ? crEng.getEndDate().toString() : null);
+            engMap.put("rating", crEng.getRating() != null ? crEng.getRating().doubleValue() : null);
+            engMap.put("salary", crEng.getSalary() != null ? crEng.getSalary().doubleValue() : null);
+            resourcesAfter.add(engMap);
+        }
+        
+        // Billing Before/After
+        java.util.List<java.util.Map<String, Object>> billingBefore = new ArrayList<>();
+        for (RetainerBillingDetail billing : currentBilling) {
+            if (billing.getPaymentDate() == null || !billing.getPaymentDate().isBefore(effectiveStart)) {
+                java.util.Map<String, Object> billingMap = new java.util.HashMap<>();
+                billingMap.put("id", billing.getId());
+                billingMap.put("paymentDate", billing.getPaymentDate() != null ? billing.getPaymentDate().toString() : null);
+                billingMap.put("deliveryNote", billing.getDeliveryNote());
+                billingMap.put("amount", billing.getAmount() != null ? billing.getAmount().doubleValue() : null);
+                billingBefore.add(billingMap);
+            }
+        }
+        
+        java.util.List<java.util.Map<String, Object>> billingAfter = new ArrayList<>();
+        billingAfter.addAll(billingBefore);
+        for (ChangeRequestBillingDetail crBillingDetail : crBilling) {
+            java.util.Map<String, Object> billingMap = new java.util.HashMap<>();
+            billingMap.put("id", crBillingDetail.getId());
+            billingMap.put("paymentDate", crBillingDetail.getPaymentDate() != null ? crBillingDetail.getPaymentDate().toString() : null);
+            billingMap.put("deliveryNote", crBillingDetail.getDeliveryNote());
+            billingMap.put("amount", crBillingDetail.getAmount() != null ? crBillingDetail.getAmount().doubleValue() : null);
+            billingAfter.add(billingMap);
+        }
+        
+        preview.put("resources", java.util.Map.of(
+            "before", resourcesBefore,
+            "after", resourcesAfter
+        ));
+        preview.put("billing", java.util.Map.of(
+            "before", billingBefore,
+            "after", billingAfter
+        ));
+        
+        return preview;
+    }
+    
+    /**
+     * Apply RESOURCE_CHANGE: Update resources and billing from effective_start
+     */
+    private void applyResourceChange(Integer sowContractId, Integer changeRequestId, LocalDate effectiveStart, User currentUser) {
+        // Get proposed changes from CR
+        List<ChangeRequestEngagedEngineer> crEngineers = changeRequestEngagedEngineerRepository.findByChangeRequestId(changeRequestId);
+        List<ChangeRequestBillingDetail> crBilling = changeRequestBillingDetailRepository.findByChangeRequestId(changeRequestId);
+        
+        // Apply engineers from CR to new version
+        // Start Date of engineer = Start date from CR (not Effective from)
+        for (ChangeRequestEngagedEngineer crEng : crEngineers) {
+            SOWEngagedEngineer newEng = new SOWEngagedEngineer();
+            newEng.setSowContractId(sowContractId);
+            newEng.setEngineerLevel(crEng.getEngineerLevel());
+            // Start Date = Start date from CR engineer (user input)
+            newEng.setStartDate(crEng.getStartDate() != null ? crEng.getStartDate() : effectiveStart);
+            newEng.setEndDate(crEng.getEndDate());
+            newEng.setRating(crEng.getRating());
+            newEng.setSalary(crEng.getSalary());
+            sowEngagedEngineerRepository.save(newEng);
+        }
+        
+        // Apply billing details from CR to new version
+        for (ChangeRequestBillingDetail crBillingDetail : crBilling) {
+            RetainerBillingDetail newBilling = new RetainerBillingDetail();
+            newBilling.setSowContractId(sowContractId);
+            newBilling.setPaymentDate(crBillingDetail.getPaymentDate());
+            newBilling.setDeliveryNote(crBillingDetail.getDeliveryNote());
+            newBilling.setAmount(crBillingDetail.getAmount());
+            // Note: ChangeRequestBillingDetail doesn't have deliveryItemId field
+            // deliveryItemId will remain null for billing details created from CR
+            newBilling.setChangeRequestId(changeRequestId);
+            retainerBillingDetailRepository.save(newBilling);
+        }
+    }
+    
+    /**
+     * Apply SCHEDULE_CHANGE: Update contract end date and billing
+     */
+    private void applyScheduleChange(SOWContract sowContract, Integer changeRequestId, LocalDate effectiveStart, User currentUser) {
+        ChangeRequest changeRequest = changeRequestRepository.findById(changeRequestId)
+            .orElseThrow(() -> new RuntimeException("Change request not found"));
+        
+        LocalDate newEndDate = changeRequest.getEffectiveUntil();
+        if (newEndDate == null) {
+            throw new RuntimeException("New end date is required for SCHEDULE_CHANGE");
+        }
+        
+        // Update contract end date
+        sowContract.setPeriodEnd(newEndDate);
+        sowContractRepository.save(sowContract);
+        
+        // Update engineer end dates if they extend beyond new end date
+        List<SOWEngagedEngineer> engineers = sowEngagedEngineerRepository.findBySowContractId(sowContract.getId());
+        for (SOWEngagedEngineer eng : engineers) {
+            if (eng.getEndDate() != null && eng.getEndDate().isAfter(newEndDate)) {
+                eng.setEndDate(newEndDate);
+                sowEngagedEngineerRepository.save(eng);
+            }
+        }
+        
+        // Cancel billing entries after new end date
+        List<RetainerBillingDetail> billingDetails = retainerBillingDetailRepository.findBySowContractIdOrderByPaymentDateDesc(sowContract.getId());
+        for (RetainerBillingDetail billing : billingDetails) {
+            if (billing.getPaymentDate() != null && billing.getPaymentDate().isAfter(newEndDate)) {
+                // Mark as cancelled (you may need to add a cancelled field or status field)
+                // For now, we'll just update the change_request_id to track it
+                billing.setChangeRequestId(changeRequestId);
+                retainerBillingDetailRepository.save(billing);
+            }
+        }
+        
+        // Apply billing changes from CR
+        List<ChangeRequestBillingDetail> crBilling = changeRequestBillingDetailRepository.findByChangeRequestId(changeRequestId);
+        for (ChangeRequestBillingDetail crBillingDetail : crBilling) {
+            if (crBillingDetail.getPaymentDate() != null && 
+                !crBillingDetail.getPaymentDate().isBefore(effectiveStart) &&
+                !crBillingDetail.getPaymentDate().isAfter(newEndDate)) {
+                if (crBillingDetail.getId() == null) {
+                    // Add new billing
+                    RetainerBillingDetail newBilling = new RetainerBillingDetail();
+                    newBilling.setSowContractId(sowContract.getId());
+                    newBilling.setPaymentDate(crBillingDetail.getPaymentDate());
+                    newBilling.setDeliveryNote(crBillingDetail.getDeliveryNote());
+                    newBilling.setAmount(crBillingDetail.getAmount());
+                    newBilling.setChangeRequestId(changeRequestId);
+                    retainerBillingDetailRepository.save(newBilling);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Apply SCOPE_ADJUSTMENT: Create new one-time billing entry
+     */
+    private void applyScopeAdjustment(Integer sowContractId, Integer changeRequestId, LocalDate effectiveStart, User currentUser) {
+        ChangeRequest changeRequest = changeRequestRepository.findById(changeRequestId)
+            .orElseThrow(() -> new RuntimeException("Change request not found"));
+        
+        // Get amount and billing date from CR billing details
+        List<ChangeRequestBillingDetail> crBilling = changeRequestBillingDetailRepository.findByChangeRequestId(changeRequestId);
+        if (crBilling.isEmpty()) {
+            throw new RuntimeException("Billing detail is required for SCOPE_ADJUSTMENT");
+        }
+        
+        ChangeRequestBillingDetail scopeBilling = crBilling.get(0);
+        if (scopeBilling.getPaymentDate() == null || scopeBilling.getAmount() == null) {
+            throw new RuntimeException("Payment date and amount are required for SCOPE_ADJUSTMENT");
+        }
+        
+        // Create new billing entry
+        RetainerBillingDetail newBilling = new RetainerBillingDetail();
+        newBilling.setSowContractId(sowContractId);
+        newBilling.setPaymentDate(scopeBilling.getPaymentDate());
+        newBilling.setDeliveryNote(scopeBilling.getDeliveryNote() != null ? scopeBilling.getDeliveryNote() : 
+            "Scope adjustment – " + changeRequest.getChangeRequestId());
+        newBilling.setAmount(scopeBilling.getAmount());
+        newBilling.setChangeRequestId(changeRequestId);
+        newBilling.setDeliveryItemId(null); // Not from delivery item
+        retainerBillingDetailRepository.save(newBilling);
+    }
+    
+    /**
+     * Apply RATE_ADJUSTMENT: Update engineer rating and recalculate billing
+     */
+    private void applyRateAdjustment(Integer sowContractId, Integer changeRequestId, LocalDate effectiveStart, User currentUser) {
+        // Get proposed changes from CR
+        List<ChangeRequestEngagedEngineer> crEngineers = changeRequestEngagedEngineerRepository.findByChangeRequestId(changeRequestId);
+        
+        // Update engineer ratings
+        for (ChangeRequestEngagedEngineer crEng : crEngineers) {
+            if (crEng.getId() != null && crEng.getStartDate() != null && !crEng.getStartDate().isBefore(effectiveStart)) {
+                Optional<SOWEngagedEngineer> existingOpt = sowEngagedEngineerRepository.findById(crEng.getId());
+                if (existingOpt.isPresent()) {
+                    SOWEngagedEngineer existing = existingOpt.get();
+                    existing.setRating(crEng.getRating());
+                    sowEngagedEngineerRepository.save(existing);
+                }
+            }
+        }
+        
+        // Update billing based on new ratings (simplified - you may need more sophisticated calculation)
+        List<ChangeRequestBillingDetail> crBilling = changeRequestBillingDetailRepository.findByChangeRequestId(changeRequestId);
+        for (ChangeRequestBillingDetail crBillingDetail : crBilling) {
+            if (crBillingDetail.getPaymentDate() != null && !crBillingDetail.getPaymentDate().isBefore(effectiveStart)) {
+                if (crBillingDetail.getId() != null) {
+                    Optional<RetainerBillingDetail> existingOpt = retainerBillingDetailRepository.findById(crBillingDetail.getId());
+                    if (existingOpt.isPresent()) {
+                        RetainerBillingDetail existing = existingOpt.get();
+                        existing.setAmount(crBillingDetail.getAmount());
+                        existing.setChangeRequestId(changeRequestId);
+                        retainerBillingDetailRepository.save(existing);
+                    }
+                }
+            }
+        }
+    }
+    
+    // ============================================
+    // EVENT-BASED METHODS (New Implementation)
+    // ============================================
+    
+    /**
+     * Apply RESOURCE_CHANGE using event-based approach
+     * Creates resource events instead of directly updating engineers
+     */
+    private void applyResourceChangeEventBased(Integer sowContractId, ChangeRequest changeRequest, LocalDate effectiveStart, User currentUser) {
+        List<ChangeRequestEngagedEngineer> crEngineers = changeRequestEngagedEngineerRepository.findByChangeRequestId(changeRequest.getId());
+        List<ChangeRequestBillingDetail> crBilling = changeRequestBillingDetailRepository.findByChangeRequestId(changeRequest.getId());
+        
+        // Get baseline engineers to compare
+        List<SOWEngagedEngineerBase> baselineEngineers = sowBaselineService.getBaselineResources(sowContractId);
+        
+        // Parse engineerLevel to extract level and role
+        // Format: "Middle Backend Engineer" -> level="Middle", role="Backend Engineer"
+        // Or: "Senior Frontend" -> level="Senior", role="Frontend"
+        java.util.function.Function<String, java.util.Map<String, String>> parseEngineerLevel = (engineerLevel) -> {
+            java.util.Map<String, String> result = new java.util.HashMap<>();
+            if (engineerLevel == null || engineerLevel.trim().isEmpty()) {
+                result.put("level", "");
+                result.put("role", "");
+                return result;
+            }
+            
+            String[] parts = engineerLevel.trim().split("\\s+", 2);
+            if (parts.length >= 2) {
+                result.put("level", parts[0]); // First word is level
+                result.put("role", parts[1]); // Rest is role
+            } else {
+                result.put("level", engineerLevel);
+                result.put("role", "");
+            }
+            return result;
+        };
+        
+        // Create resource events for each engineer change
+        // IMPORTANT: Always create events for all engineers in CR, even if baseline is empty
+        for (ChangeRequestEngagedEngineer crEng : crEngineers) {
+            // Parse engineer level to get role and level
+            // Format: "Middle Backend Engineer" -> level="Middle", role="Backend Engineer"
+            java.util.Map<String, String> parsed = parseEngineerLevel.apply(crEng.getEngineerLevel());
+            String crLevel = parsed.get("level");
+            String crRole = parsed.get("role");
+            
+            // Try to find matching baseline engineer by role and level
+            // Match if role and level are similar (case-insensitive)
+            SOWEngagedEngineerBase matchingBaseEng = null;
+            if (!baselineEngineers.isEmpty() && !crLevel.isEmpty() && !crRole.isEmpty()) {
+                matchingBaseEng = baselineEngineers.stream()
+                    .filter(base -> {
+                        // Compare level and role (case-insensitive, partial match)
+                        boolean levelMatch = base.getLevel() != null && 
+                            base.getLevel().equalsIgnoreCase(crLevel);
+                        boolean roleMatch = base.getRole() != null && 
+                            (base.getRole().equalsIgnoreCase(crRole) || 
+                             base.getRole().toLowerCase().contains(crRole.toLowerCase()) ||
+                             crRole.toLowerCase().contains(base.getRole().toLowerCase()));
+                        return levelMatch && roleMatch;
+                    })
+                    .findFirst()
+                    .orElse(null);
+            }
+            
+            if (matchingBaseEng != null) {
+                // MODIFY event - engineer exists in baseline
+                crEventService.createResourceEvent(
+                    changeRequest,
+                    CRResourceEvent.ResourceAction.MODIFY,
+                    matchingBaseEng.getId(),
+                    matchingBaseEng.getRole(),
+                    matchingBaseEng.getLevel(),
+                    matchingBaseEng.getRating(),
+                    crEng.getRating(),
+                    matchingBaseEng.getUnitRate(),
+                    crEng.getSalary(),
+                    matchingBaseEng.getStartDate(),
+                    crEng.getStartDate() != null ? crEng.getStartDate() : effectiveStart,
+                    matchingBaseEng.getEndDate(),
+                    crEng.getEndDate(),
+                    effectiveStart
+                );
+            } else {
+                // ADD event - new engineer not in baseline (or baseline is empty)
+                // Use parsed level and role, or fallback to engineerLevel
+                String eventRole = !crRole.isEmpty() ? crRole : crEng.getEngineerLevel();
+                String eventLevel = !crLevel.isEmpty() ? crLevel : "";
+                
+                // If we couldn't parse, use the full engineerLevel as role
+                if (eventRole.isEmpty() && eventLevel.isEmpty()) {
+                    eventRole = crEng.getEngineerLevel();
+                    eventLevel = "";
+                }
+                
+                crEventService.createResourceEvent(
+                    changeRequest,
+                    CRResourceEvent.ResourceAction.ADD,
+                    null,
+                    eventRole,
+                    eventLevel,
+                    null,
+                    crEng.getRating(),
+                    null,
+                    crEng.getSalary(),
+                    null,
+                    crEng.getStartDate() != null ? crEng.getStartDate() : effectiveStart,
+                    null,
+                    crEng.getEndDate(),
+                    effectiveStart
+                );
+            }
+        }
+        
+        // Log if no engineers found (for debugging)
+        if (crEngineers.isEmpty()) {
+            logger.warn("No engineers found in Change Request {} for RESOURCE_CHANGE", changeRequest.getId());
+        }
+        
+        // Create billing events
+        for (ChangeRequestBillingDetail crBillingDetail : crBilling) {
+            if (crBillingDetail.getPaymentDate() != null && !crBillingDetail.getPaymentDate().isBefore(effectiveStart)) {
+                LocalDate billingMonth = crBillingDetail.getPaymentDate().withDayOfMonth(1);
+                
+                // Calculate delta (simplified - in production, compare with baseline)
+                BigDecimal deltaAmount = crBillingDetail.getAmount();
+                
+                crEventService.createBillingEvent(
+                    changeRequest,
+                    billingMonth,
+                    deltaAmount,
+                    crBillingDetail.getDeliveryNote(),
+                    CRBillingEvent.BillingEventType.RETAINER_ADJUST
+                );
+            }
+        }
+    }
+    
+    /**
+     * Apply SCHEDULE_CHANGE using event-based approach
+     */
+    private void applyScheduleChangeEventBased(SOWContract sowContract, ChangeRequest changeRequest, LocalDate effectiveStart, User currentUser) {
+        LocalDate newEndDate = changeRequest.getEffectiveUntil();
+        if (newEndDate == null) {
+            throw new RuntimeException("New end date is required for SCHEDULE_CHANGE");
+        }
+        
+        // Update contract end date directly (this is a contract-level change)
+        sowContract.setPeriodEnd(newEndDate);
+        sowContractRepository.save(sowContract);
+        
+        // Create resource events for engineers that need end date adjustment
+        List<SOWEngagedEngineerBase> baselineEngineers = sowBaselineService.getBaselineResources(sowContract.getId());
+        for (SOWEngagedEngineerBase baseEng : baselineEngineers) {
+            if (baseEng.getEndDate() == null || baseEng.getEndDate().isAfter(newEndDate)) {
+                crEventService.createResourceEvent(
+                    changeRequest,
+                    CRResourceEvent.ResourceAction.MODIFY,
+                    baseEng.getId(),
+                    baseEng.getRole(),
+                    baseEng.getLevel(),
+                    baseEng.getRating(),
+                    baseEng.getRating(),
+                    baseEng.getUnitRate(),
+                    baseEng.getUnitRate(),
+                    baseEng.getStartDate(),
+                    baseEng.getStartDate(),
+                    baseEng.getEndDate(),
+                    newEndDate,
+                    effectiveStart
+                );
+            }
+        }
+        
+        // Create billing events for new months (if extending) or cancellation (if shortening)
+        // This is simplified - in production, you'd need more sophisticated logic
+    }
+    
+    /**
+     * Apply SCOPE_ADJUSTMENT using event-based approach
+     */
+    private void applyScopeAdjustmentEventBased(Integer sowContractId, ChangeRequest changeRequest, LocalDate effectiveStart, User currentUser) {
+        // SCOPE_ADJUSTMENT creates a one-time billing event
+        LocalDate billingDate = changeRequest.getEffectiveFrom() != null 
+            ? changeRequest.getEffectiveFrom().withDayOfMonth(1)
+            : effectiveStart.withDayOfMonth(1);
+        
+        crEventService.createBillingEvent(
+            changeRequest,
+            billingDate,
+            changeRequest.getAmount(),
+            "Scope adjustment: " + (changeRequest.getDescription() != null ? changeRequest.getDescription() : ""),
+            CRBillingEvent.BillingEventType.SCOPE_ADJUSTMENT
+        );
+    }
+    
+    /**
+     * Apply RATE_ADJUSTMENT using event-based approach
+     */
+    private void applyRateAdjustmentEventBased(Integer sowContractId, ChangeRequest changeRequest, LocalDate effectiveStart, User currentUser) {
+        List<ChangeRequestEngagedEngineer> crEngineers = changeRequestEngagedEngineerRepository.findByChangeRequestId(changeRequest.getId());
+        List<SOWEngagedEngineerBase> baselineEngineers = sowBaselineService.getBaselineResources(sowContractId);
+        
+        for (ChangeRequestEngagedEngineer crEng : crEngineers) {
+            if (crEng.getId() != null) {
+                SOWEngagedEngineerBase baseEng = baselineEngineers.stream()
+                    .filter(e -> e.getId().equals(crEng.getId()))
+                    .findFirst()
+                    .orElse(null);
+                
+                if (baseEng != null) {
+                    // MODIFY event for rating change
+                    crEventService.createResourceEvent(
+                        changeRequest,
+                        CRResourceEvent.ResourceAction.MODIFY,
+                        baseEng.getId(),
+                        baseEng.getRole(),
+                        baseEng.getLevel(),
+                        baseEng.getRating(),
+                        crEng.getRating(),
+                        baseEng.getUnitRate(),
+                        crEng.getSalary(),
+                        baseEng.getStartDate(),
+                        baseEng.getStartDate(),
+                        baseEng.getEndDate(),
+                        baseEng.getEndDate(),
+                        effectiveStart
+                    );
+                }
+            }
+        }
+        
+        // Create billing events for affected months
+        List<ChangeRequestBillingDetail> crBilling = changeRequestBillingDetailRepository.findByChangeRequestId(changeRequest.getId());
+        for (ChangeRequestBillingDetail crBillingDetail : crBilling) {
+            if (crBillingDetail.getPaymentDate() != null && !crBillingDetail.getPaymentDate().isBefore(effectiveStart)) {
+                LocalDate billingMonth = crBillingDetail.getPaymentDate().withDayOfMonth(1);
+                
+                // Calculate delta
+                BigDecimal deltaAmount = crBillingDetail.getAmount();
+                
+                crEventService.createBillingEvent(
+                    changeRequest,
+                    billingMonth,
+                    deltaAmount,
+                    "Rate adjustment: " + crBillingDetail.getDeliveryNote(),
+                    CRBillingEvent.BillingEventType.RETAINER_ADJUST
+                );
+            }
+        }
+    }
+    
+    /**
+     * Get current resources at a specific date for CR creation/editing
+     * Returns resources calculated from baseline + approved events up to asOfDate
+     * @param sowContractId SOW contract ID
+     * @param asOfDate Date to calculate resources for (usually CR.effectiveFrom)
+     * @param currentUser Current user (for access control)
+     * @return CurrentResourcesDTO with resources list
+     */
+    public com.skillbridge.dto.sales.response.CurrentResourcesDTO getCurrentResources(
+            Integer sowContractId, 
+            LocalDate asOfDate, 
+            User currentUser) {
+        
+        // 1. Validate contract exists and is Retainer type
+        SOWContract contract = sowContractRepository.findById(sowContractId)
+            .orElseThrow(() -> new RuntimeException("SOW Contract not found"));
+        
+        // Check access permission (Sales Manager sees all, Sales Rep sees only assigned)
+        if (!"SALES_MANAGER".equals(currentUser.getRole())) {
+            if (contract.getAssigneeUserId() == null || !contract.getAssigneeUserId().equals(currentUser.getId())) {
+                throw new RuntimeException("Access denied: You can only view contracts assigned to you");
+            }
+        }
+        
+        String engagementType = contract.getEngagementType();
+        if (engagementType == null || (!engagementType.equals("Retainer") && !engagementType.equals("Retainer_"))) {
+            throw new RuntimeException("This operation is only for Retainer SOW contracts");
+        }
+        
+        // 2. Ensure baseline exists (create if not)
+        sowBaselineService.createBaseline(sowContractId);
+        
+        // 3. Call CREventService.calculateCurrentResources(sowContractId, asOfDate)
+        List<CREventService.CurrentEngineerState> currentEngineerStates = 
+            crEventService.calculateCurrentResources(sowContractId, asOfDate);
+        
+        // 4. Convert to DTO format
+        List<com.skillbridge.dto.sales.response.CurrentResourcesDTO.ResourceDTO> resourceDTOs = new ArrayList<>();
+        
+        // Get baseline engineers to map baseEngineerId
+        List<SOWEngagedEngineerBase> baselineEngineers = sowBaselineService.getBaselineResources(sowContractId);
+        java.util.Map<Integer, Integer> engineerIdToBaseIdMap = new java.util.HashMap<>();
+        for (SOWEngagedEngineerBase base : baselineEngineers) {
+            engineerIdToBaseIdMap.put(base.getId(), base.getId());
+        }
+        
+        for (CREventService.CurrentEngineerState state : currentEngineerStates) {
+            com.skillbridge.dto.sales.response.CurrentResourcesDTO.ResourceDTO dto = 
+                new com.skillbridge.dto.sales.response.CurrentResourcesDTO.ResourceDTO();
+            
+            dto.setEngineerId(state.getEngineerId());
+            dto.setBaseEngineerId(engineerIdToBaseIdMap.get(state.getEngineerId())); // Map to baseline ID if exists
+            dto.setLevel(state.getLevel());
+            dto.setRole(state.getRole());
+            
+            // Build engineerLevelLabel: "Level Role" (e.g., "Middle Backend Engineer")
+            String levelStr = state.getLevel() != null ? state.getLevel() : "";
+            String roleStr = state.getRole() != null ? state.getRole() : "";
+            String engineerLevelLabel = (levelStr + " " + roleStr).trim();
+            dto.setEngineerLevelLabel(engineerLevelLabel);
+            
+            dto.setStartDate(state.getStartDate());
+            dto.setEndDate(state.getEndDate());
+            dto.setRating(state.getRating());
+            dto.setUnitRate(state.getUnitRate());
+            
+            resourceDTOs.add(dto);
+        }
+        
+        // 5. Return
+        com.skillbridge.dto.sales.response.CurrentResourcesDTO response = 
+            new com.skillbridge.dto.sales.response.CurrentResourcesDTO();
+        response.setSowContractId(sowContractId);
+        response.setAsOfDate(asOfDate);
+        response.setResources(resourceDTOs);
+        
+        return response;
     }
 }
 

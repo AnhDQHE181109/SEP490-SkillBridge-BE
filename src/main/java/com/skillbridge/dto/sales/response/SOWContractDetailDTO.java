@@ -61,6 +61,9 @@ public class SOWContractDetailDTO {
     
     // History
     private List<HistoryItemDTO> history;
+    
+    // Versioning (for Retainer SOW)
+    private Integer version; // Version number (V1, V2, V3, etc.)
 
     // Getters and Setters
     public Integer getId() {
@@ -373,6 +376,14 @@ public class SOWContractDetailDTO {
 
     public void setHistory(List<HistoryItemDTO> history) {
         this.history = history;
+    }
+
+    public Integer getVersion() {
+        return version;
+    }
+
+    public void setVersion(Integer version) {
+        this.version = version;
     }
 
     // Inner DTOs
