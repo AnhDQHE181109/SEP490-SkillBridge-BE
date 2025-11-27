@@ -2,6 +2,7 @@ package com.skillbridge.dto.contact.request;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -19,6 +20,7 @@ public class ContactFormData {
     private String companyName;
 
     @NotBlank(message = "Phone is required")
+    @Pattern(regexp = "^[\\d\\-\\+\\(\\)\\s]+$", message = "Phone number format is invalid")
     private String phone;
 
     @NotBlank(message = "Email is required")

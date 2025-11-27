@@ -13,6 +13,10 @@ import com.skillbridge.dto.sales.response.SalesChangeRequestDetailDTO;
 import com.skillbridge.entity.auth.User;
 import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.service.sales.SalesSOWContractService;
+import com.skillbridge.service.sales.SOWBaselineService;
+import com.skillbridge.service.sales.CREventService;
+import com.skillbridge.service.sales.ContractAppendixService;
+import com.skillbridge.entity.contract.ContractAppendix;
 import com.skillbridge.util.JwtTokenProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +49,15 @@ public class SalesSOWContractController {
     
     @Autowired
     private JwtTokenProvider jwtTokenProvider;
+    
+    @Autowired
+    private SOWBaselineService sowBaselineService;
+    
+    @Autowired
+    private CREventService crEventService;
+    
+    @Autowired
+    private ContractAppendixService contractAppendixService;
     
     private final Gson gson = new Gson();
     
@@ -239,6 +252,89 @@ public class SalesSOWContractController {
     }
     
     /**
+     * Get all versions of a SOW contract
+     * GET /sales/contracts/sow/{contractId}/versions
+     */
+    @GetMapping("/{contractId}/versions")
+    public ResponseEntity<?> getSOWContractVersions(
+        @PathVariable Integer contractId,
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+        
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+        
+        try {
+            List<SOWContractDetailDTO> versions = contractService.getSOWContractVersions(contractId, currentUser);
+            return ResponseEntity.ok(versions);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(400).body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to get SOW contract versions: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Update SOW contract (for Request_for_Change status - allows updating Engaged Engineers and Billing Details)
+     * PUT /sales/contracts/sow/{contractId}
+     */
+    @PutMapping("/{contractId}")
+    public ResponseEntity<?> updateSOWContract(
+        @PathVariable Integer contractId,
+        @RequestParam(required = false) String engagedEngineers, // JSON string (for Retainer)
+        @RequestParam(required = false) String billingDetails, // JSON string
+        @RequestParam(required = false) MultipartFile[] attachments,
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+        
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+        
+        try {
+            CreateSOWRequest updateRequest = new CreateSOWRequest();
+            
+            // Parse engagedEngineers if provided
+            if (engagedEngineers != null && !engagedEngineers.trim().isEmpty()) {
+                Type engagedEngineerListType = new TypeToken<List<CreateSOWRequest.EngagedEngineerDTO>>(){}.getType();
+                List<CreateSOWRequest.EngagedEngineerDTO> engagedEngineersList = gson.fromJson(engagedEngineers, engagedEngineerListType);
+                updateRequest.setEngagedEngineers(engagedEngineersList != null ? engagedEngineersList : new ArrayList<>());
+            } else {
+                updateRequest.setEngagedEngineers(new ArrayList<>());
+            }
+            
+            // Parse billingDetails if provided
+            if (billingDetails != null && !billingDetails.trim().isEmpty()) {
+                Type billingDetailListType = new TypeToken<List<CreateSOWRequest.BillingDetailDTO>>(){}.getType();
+                List<CreateSOWRequest.BillingDetailDTO> billingDetailsList = gson.fromJson(billingDetails, billingDetailListType);
+                updateRequest.setBillingDetails(billingDetailsList != null ? billingDetailsList : new ArrayList<>());
+            } else {
+                updateRequest.setBillingDetails(new ArrayList<>());
+            }
+            
+            SOWContractDTO contract = contractService.updateSOWContract(contractId, updateRequest, attachments, currentUser);
+            return ResponseEntity.ok(contract);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(400).body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to update SOW contract: " + e.getMessage()));
+        }
+    }
+    
+    /**
      * Get current user from authentication or JWT token
      */
     private User getCurrentUser(Authentication authentication, HttpServletRequest request) {
@@ -357,6 +453,7 @@ public class SalesSOWContractController {
         @RequestParam Integer internalReviewerId,
         @RequestParam(required = false) String comment,
         @RequestParam String action, // "save" or "submit"
+        @RequestParam(required = false) String reviewAction, // "APPROVE" or "REQUEST_REVISION" (when internal reviewer is current user)
         @RequestParam(required = false) MultipartFile[] attachments,
         Authentication authentication,
         HttpServletRequest request
@@ -383,6 +480,7 @@ public class SalesSOWContractController {
             createRequest.setInternalReviewerId(internalReviewerId);
             createRequest.setComment(comment);
             createRequest.setAction(action);
+            createRequest.setReviewAction(reviewAction);
             
             // Parse JSON strings to objects
             if (engagedEngineers != null && !engagedEngineers.trim().isEmpty()) {
@@ -592,6 +690,343 @@ public class SalesSOWContractController {
             return ResponseEntity.status(400).body(new ErrorResponse(e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(new ErrorResponse("Failed to submit review: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Approve change request and apply changes to contract (for Retainer SOW)
+     * POST /sales/contracts/sow/{sowContractId}/change-requests/{changeRequestId}/approve
+     */
+    @PostMapping("/{sowContractId}/change-requests/{changeRequestId}/approve")
+    public ResponseEntity<?> approveChangeRequestForSOW(
+        @PathVariable Integer sowContractId,
+        @PathVariable Integer changeRequestId,
+        @RequestParam(required = false) String reviewNotes,
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+
+        try {
+            contractService.approveChangeRequestForSOW(sowContractId, changeRequestId, reviewNotes, currentUser);
+            return ResponseEntity.ok().build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(400).body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to approve change request: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Reject change request without applying changes (for Retainer SOW)
+     * POST /sales/contracts/sow/{sowContractId}/change-requests/{changeRequestId}/reject
+     */
+    @PostMapping("/{sowContractId}/change-requests/{changeRequestId}/reject")
+    public ResponseEntity<?> rejectChangeRequestForSOW(
+        @PathVariable Integer sowContractId,
+        @PathVariable Integer changeRequestId,
+        @RequestParam(required = false) String reason,
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+
+        try {
+            contractService.rejectChangeRequestForSOW(sowContractId, changeRequestId, reason, currentUser);
+            return ResponseEntity.ok().build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(400).body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to reject change request: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Get preview of changes (Before/After comparison) for change request
+     * GET /sales/contracts/sow/{sowContractId}/change-requests/{changeRequestId}/preview
+     */
+    @GetMapping("/{sowContractId}/change-requests/{changeRequestId}/preview")
+    public ResponseEntity<?> getChangeRequestPreviewForSOW(
+        @PathVariable Integer sowContractId,
+        @PathVariable Integer changeRequestId,
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+
+        try {
+            // This will be implemented in service
+            return ResponseEntity.ok(contractService.getChangeRequestPreviewForSOW(sowContractId, changeRequestId, currentUser));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(400).body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to get preview: " + e.getMessage()));
+        }
+    }
+    
+    // ============================================
+    // EVENT-BASED API ENDPOINTS
+    // ============================================
+    
+    /**
+     * Get baseline data for SOW contract (original contract snapshot)
+     * GET /sales/contracts/sow/{contractId}/baseline
+     */
+    @GetMapping("/{contractId}/baseline")
+    public ResponseEntity<?> getSOWContractBaseline(
+        @PathVariable Integer contractId,
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+        
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+        
+        try {
+            java.util.Map<String, Object> baseline = new java.util.HashMap<>();
+            baseline.put("engineers", sowBaselineService.getBaselineResources(contractId));
+            baseline.put("billing", sowBaselineService.getBaselineBilling(contractId));
+            return ResponseEntity.ok(baseline);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to get baseline: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Get current state for SOW contract (baseline + events)
+     * GET /sales/contracts/sow/{contractId}/current-state?asOfDate={date}
+     */
+    @GetMapping("/{contractId}/current-state")
+    public ResponseEntity<?> getSOWContractCurrentState(
+        @PathVariable Integer contractId,
+        @RequestParam(required = false) String asOfDate,
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+        
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+        
+        try {
+            java.time.LocalDate date = asOfDate != null ? java.time.LocalDate.parse(asOfDate) : java.time.LocalDate.now();
+            
+            java.util.Map<String, Object> currentState = new java.util.HashMap<>();
+            currentState.put("engineers", crEventService.calculateCurrentResources(contractId, date));
+            
+            // Calculate billing for current month
+            java.time.LocalDate currentMonth = date.withDayOfMonth(1);
+            currentState.put("billing", java.util.Map.of(
+                "month", currentMonth.toString(),
+                "amount", crEventService.calculateCurrentBilling(contractId, currentMonth)
+            ));
+            
+            return ResponseEntity.ok(currentState);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to get current state: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Get current resources at a specific date for CR creation/editing
+     * GET /sales/contracts/sow/{contractId}/current-resources?asOfDate={date}
+     */
+    @GetMapping("/{contractId}/current-resources")
+    public ResponseEntity<?> getSOWContractCurrentResources(
+        @PathVariable Integer contractId,
+        @RequestParam(required = true) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate asOfDate,
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+        
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+        
+        try {
+            com.skillbridge.dto.sales.response.CurrentResourcesDTO response = 
+                contractService.getCurrentResources(contractId, asOfDate, currentUser);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(400).body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to get current resources: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Get all appendices for SOW contract
+     * GET /sales/contracts/sow/{contractId}/appendices
+     */
+    @GetMapping("/{contractId}/appendices")
+    public ResponseEntity<?> getSOWContractAppendices(
+        @PathVariable Integer contractId,
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+        
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+        
+        try {
+            List<ContractAppendix> appendices = contractAppendixService.getAppendices(contractId);
+            return ResponseEntity.ok(appendices);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to get appendices: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Get appendix detail
+     * GET /sales/contracts/sow/{contractId}/appendices/{appendixId}
+     */
+    @GetMapping("/{contractId}/appendices/{appendixId}")
+    public ResponseEntity<?> getSOWContractAppendix(
+        @PathVariable Integer contractId,
+        @PathVariable Integer appendixId,
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+        
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+        
+        try {
+            ContractAppendix appendix = contractAppendixService.getAppendix(appendixId);
+            if (!appendix.getSowContractId().equals(contractId)) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Appendix does not belong to this contract"));
+            }
+            return ResponseEntity.ok(appendix);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to get appendix: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Sign appendix
+     * POST /sales/contracts/sow/{contractId}/appendices/{appendixId}/sign
+     */
+    @PostMapping("/{contractId}/appendices/{appendixId}/sign")
+    public ResponseEntity<?> signSOWContractAppendix(
+        @PathVariable Integer contractId,
+        @PathVariable Integer appendixId,
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+        
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+        
+        try {
+            contractAppendixService.signAppendix(appendixId);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to sign appendix: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Get events for SOW contract
+     * GET /sales/contracts/sow/{contractId}/events?type={resource|billing}&fromDate={date}&toDate={date}
+     */
+    @GetMapping("/{contractId}/events")
+    public ResponseEntity<?> getSOWContractEvents(
+        @PathVariable Integer contractId,
+        @RequestParam(required = false) String type, // "resource" or "billing"
+        @RequestParam(required = false) String fromDate,
+        @RequestParam(required = false) String toDate,
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+        
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+        
+        try {
+            java.util.Map<String, Object> events = new java.util.HashMap<>();
+            
+            if (type == null || "resource".equals(type)) {
+                java.time.LocalDate asOfDate = toDate != null ? java.time.LocalDate.parse(toDate) : java.time.LocalDate.now();
+                events.put("resources", crEventService.getResourceEvents(contractId, asOfDate));
+            }
+            
+            if (type == null || "billing".equals(type)) {
+                if (fromDate != null) {
+                    java.time.LocalDate month = java.time.LocalDate.parse(fromDate).withDayOfMonth(1);
+                    events.put("billing", crEventService.getBillingEvents(contractId, month));
+                } else {
+                    // Get all billing events
+                    events.put("billing", crEventService.getBillingEvents(contractId, java.time.LocalDate.now().withDayOfMonth(1)));
+                }
+            }
+            
+            return ResponseEntity.ok(events);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to get events: " + e.getMessage()));
         }
     }
 }

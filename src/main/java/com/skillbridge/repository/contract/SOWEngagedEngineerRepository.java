@@ -21,6 +21,13 @@ public interface SOWEngagedEngineerRepository extends JpaRepository<SOWEngagedEn
     List<SOWEngagedEngineer> findBySowContractId(Integer sowContractId);
     
     /**
+     * Find all engaged engineers for a SOW contract, ordered by start date ascending
+     * @param sowContractId SOW contract ID
+     * @return List of engaged engineers ordered by start date
+     */
+    List<SOWEngagedEngineer> findBySowContractIdOrderByStartDateAsc(Integer sowContractId);
+    
+    /**
      * Delete all engaged engineers for a SOW contract
      * @param sowContractId SOW contract ID
      */
