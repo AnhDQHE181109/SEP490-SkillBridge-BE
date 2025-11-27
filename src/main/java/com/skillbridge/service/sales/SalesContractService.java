@@ -186,6 +186,12 @@ public class SalesContractService {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             
+            // Only show V1 contracts (version = 1 or parent_version_id = null)
+            // This ensures we only show the original version, not subsequent versions
+            Predicate versionIsOne = cb.equal(root.get("version"), 1);
+            Predicate parentVersionIsNull = cb.isNull(root.get("parentVersionId"));
+            predicates.add(cb.or(versionIsOne, parentVersionIsNull));
+            
             // Role-based filtering: assignee_user_id
             if (assigneeUserId != null) {
                 predicates.add(cb.equal(root.get("assigneeUserId"), assigneeUserId));

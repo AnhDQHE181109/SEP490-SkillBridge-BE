@@ -56,6 +56,9 @@ public class ContractDetailService {
     private RetainerBillingDetailRepository retainerBillingDetailRepository;
     
     @Autowired
+    private SOWEngagedEngineerRepository sowEngagedEngineerRepository;
+    
+    @Autowired
     private DocumentMetadataRepository documentMetadataRepository;
     
     private final Gson gson = new Gson();
@@ -198,6 +201,39 @@ public class ContractDetailService {
     }
     
     /**
+     * Get all versions of a SOW contract for client
+     */
+    public List<ContractDetailDTO> getSOWContractVersions(Integer contractId, Integer clientUserId) {
+        SOWContract contract = sowContractRepository.findByIdAndClientId(contractId, clientUserId)
+            .orElseThrow(() -> new EntityNotFoundException("SOW Contract not found"));
+        
+        // Find the original contract ID (if this is a version, find the original)
+        Integer originalContractId = contract.getParentVersionId() != null ? contract.getParentVersionId() : contractId;
+        
+        // Get all versions
+        List<SOWContract> versions = sowContractRepository.findAllVersionsByParentVersionId(originalContractId);
+        
+        // Filter to only include contracts that belong to this client
+        versions = versions.stream()
+            .filter(v -> v.getClientId().equals(clientUserId))
+            .collect(Collectors.toList());
+        
+        // If no versions found, return just the current contract
+        if (versions.isEmpty()) {
+            versions = java.util.Collections.singletonList(contract);
+        }
+        
+        // Convert to DTOs
+        List<ContractDetailDTO> versionDTOs = new ArrayList<>();
+        for (SOWContract version : versions) {
+            ContractDetailDTO dto = getSOWDetail(version, clientUserId);
+            versionDTOs.add(dto);
+        }
+        
+        return versionDTOs;
+    }
+    
+    /**
      * Get SOW contract detail (Fixed Price or Retainer)
      */
     private ContractDetailDTO getSOWDetail(SOWContract sow, Integer clientUserId) {
@@ -292,6 +328,13 @@ public class ContractDetailService {
                 .collect(Collectors.toList());
             dto.setBillingDetails(billingDetailDTOs);
         } else if (engagementTypeStr.equals("Retainer")) {
+            // Load engaged engineers
+            List<SOWEngagedEngineer> engagedEngineers = sowEngagedEngineerRepository.findBySowContractIdOrderByStartDateAsc(sow.getId());
+            List<ContractDetailDTO.EngagedEngineerDTO> engagedEngineerDTOs = engagedEngineers.stream()
+                .map(this::convertToEngagedEngineerDTO)
+                .collect(Collectors.toList());
+            dto.setEngagedEngineers(engagedEngineerDTOs);
+            
             // Load delivery items
             List<DeliveryItem> deliveryItems = deliveryItemRepository.findBySowContractIdOrderByPaymentDateDesc(sow.getId());
             List<DeliveryItemDTO> deliveryItemDTOs = deliveryItems.stream()
@@ -710,6 +753,17 @@ public class ContractDetailService {
     /**
      * Convert RetainerBillingDetail to DTO
      */
+    private ContractDetailDTO.EngagedEngineerDTO convertToEngagedEngineerDTO(SOWEngagedEngineer engineer) {
+        ContractDetailDTO.EngagedEngineerDTO dto = new ContractDetailDTO.EngagedEngineerDTO();
+        dto.setId(engineer.getId());
+        dto.setEngineerLevel(engineer.getEngineerLevel());
+        dto.setStartDate(formatDate(engineer.getStartDate()));
+        dto.setEndDate(formatDate(engineer.getEndDate()));
+        dto.setRating(engineer.getRating() != null ? engineer.getRating().doubleValue() : null);
+        dto.setSalary(engineer.getSalary() != null ? engineer.getSalary().doubleValue() : null);
+        return dto;
+    }
+    
     private RetainerBillingDetailDTO convertToRetainerBillingDTO(RetainerBillingDetail billing) {
         RetainerBillingDetailDTO dto = new RetainerBillingDetailDTO();
         dto.setId(billing.getId());

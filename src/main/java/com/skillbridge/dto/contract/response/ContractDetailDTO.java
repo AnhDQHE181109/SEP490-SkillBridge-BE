@@ -45,6 +45,7 @@ public class ContractDetailDTO {
     // Retainer SOW fields
     private List<DeliveryItemDTO> deliveryItems;
     private List<RetainerBillingDetailDTO> retainerBillingDetails;
+    private List<EngagedEngineerDTO> engagedEngineers; // For Retainer
     
     // Change Requests (common for both)
     private List<ChangeRequestDTO> changeRequests;
@@ -261,6 +262,14 @@ public class ContractDetailDTO {
         this.retainerBillingDetails = retainerBillingDetails;
     }
 
+    public List<EngagedEngineerDTO> getEngagedEngineers() {
+        return engagedEngineers;
+    }
+
+    public void setEngagedEngineers(List<EngagedEngineerDTO> engagedEngineers) {
+        this.engagedEngineers = engagedEngineers;
+    }
+
     public List<ChangeRequestDTO> getChangeRequests() {
         return changeRequests;
     }
@@ -383,6 +392,69 @@ public class ContractDetailDTO {
 
         public void setStatus(String status) {
             this.status = status;
+        }
+    }
+
+    /**
+     * Engaged Engineer DTO (for Retainer SOW)
+     */
+    public static class EngagedEngineerDTO {
+        private Integer id;
+        private String engineerLevel;
+        private String startDate; // Format: YYYY-MM-DD
+        private String endDate; // Format: YYYY-MM-DD
+        private Double rating; // Percentage (0-100)
+        private Double salary; // Currency amount
+
+        public EngagedEngineerDTO() {
+        }
+
+        public Integer getId() {
+            return id;
+        }
+
+        public void setId(Integer id) {
+            this.id = id;
+        }
+
+        public String getEngineerLevel() {
+            return engineerLevel;
+        }
+
+        public void setEngineerLevel(String engineerLevel) {
+            this.engineerLevel = engineerLevel;
+        }
+
+        public String getStartDate() {
+            return startDate;
+        }
+
+        public void setStartDate(String startDate) {
+            this.startDate = startDate;
+        }
+
+        public String getEndDate() {
+            return endDate;
+        }
+
+        public void setEndDate(String endDate) {
+            this.endDate = endDate;
+        }
+
+        public Double getRating() {
+            return rating;
+        }
+
+        public void setRating(Double rating) {
+            this.rating = rating;
+        }
+
+        public Double getSalary() {
+            return salary;
+        }
+
+        public void setSalary(Double salary) {
+            this.salary = salary;
         }
     }
 }
