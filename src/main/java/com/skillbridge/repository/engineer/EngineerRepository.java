@@ -115,5 +115,16 @@ public interface EngineerRepository extends JpaRepository<Engineer, Integer> {
      */
     @Query("SELECT DISTINCT e.seniority FROM Engineer e WHERE e.seniority IS NOT NULL ORDER BY e.seniority")
     List<String> findDistinctSeniorities();
+
+    /**
+     * Search engineers by full name or primary skill (for Admin list)
+     */
+    Page<Engineer> findByFullNameContainingIgnoreCaseOrPrimarySkillContainingIgnoreCase(
+            String fullName, String primarySkill, Pageable pageable);
+
+    /**
+     * Find engineer by email (for uniqueness check)
+     */
+    java.util.Optional<Engineer> findByEmail(String email);
 }
 

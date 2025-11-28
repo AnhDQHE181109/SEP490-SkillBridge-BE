@@ -8,6 +8,7 @@ import com.skillbridge.entity.engineer.Engineer;
 import com.skillbridge.repository.engineer.CertificateRepository;
 import com.skillbridge.repository.engineer.EngineerRepository;
 import com.skillbridge.repository.engineer.EngineerSkillRepository;
+import com.skillbridge.service.common.S3Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -30,6 +31,9 @@ public class EngineerService {
     @Autowired
     private CertificateRepository certificateRepository;
 
+    @Autowired(required = false)
+    private S3Service s3Service;
+
     /**
      * Get detailed engineer information by ID
      * @param id Engineer ID
@@ -49,7 +53,25 @@ public class EngineerService {
         dto.setId(engineer.getId());
         dto.setFullName(engineer.getFullName());
         dto.setLocation(engineer.getLocation());
-        dto.setProfileImageUrl(engineer.getProfileImageUrl());
+        
+        // Generate presigned URL if profileImageUrl is S3 key (not a full URL)
+        String profileImageUrl = engineer.getProfileImageUrl();
+        if (profileImageUrl != null && !profileImageUrl.isEmpty()) {
+            // If it's not a URL (doesn't start with http:// or https://), treat it as S3 key
+            if (!profileImageUrl.startsWith("http://") && !profileImageUrl.startsWith("https://")) {
+                // Generate presigned URL with 24 hours expiration
+                if (s3Service != null) {
+                    try {
+                        profileImageUrl = s3Service.getPresignedUrl(profileImageUrl, 24 * 60); // 24 hours
+                    } catch (Exception e) {
+                        // If S3 service is not available or key is invalid, use original value
+                        System.err.println("Failed to generate presigned URL for S3 key: " + profileImageUrl);
+                    }
+                }
+            }
+        }
+        dto.setProfileImageUrl(profileImageUrl);
+        
         dto.setSalaryExpectation(engineer.getSalaryExpectation());
         dto.setYearsExperience(engineer.getYearsExperience());
         dto.setSeniority(engineer.getSeniority());

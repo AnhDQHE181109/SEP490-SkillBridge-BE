@@ -2,6 +2,7 @@ package com.skillbridge.entity.engineer;
 
 import jakarta.persistence.*;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -43,6 +44,24 @@ public class Engineer {
 
     @Column(name = "primary_skill")
     private String primarySkill;
+
+    @Column(length = 255, unique = true)
+    private String email;
+
+    @Column(length = 20)
+    private String phone;
+
+    @Column(length = 16)
+    private String gender;
+
+    @Column(name = "date_of_birth")
+    private LocalDate dateOfBirth;
+
+    @Column(name = "interested_in_japan")
+    private Boolean interestedInJapan;
+
+    @Column(name = "project_type_experience", length = 500)
+    private String projectTypeExperience;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
@@ -172,6 +191,54 @@ public class Engineer {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
+    }
+
+    public String getGender() {
+        return gender;
+    }
+
+    public void setGender(String gender) {
+        this.gender = gender;
+    }
+
+    public LocalDate getDateOfBirth() {
+        return dateOfBirth;
+    }
+
+    public void setDateOfBirth(LocalDate dateOfBirth) {
+        this.dateOfBirth = dateOfBirth;
+    }
+
+    public Boolean getInterestedInJapan() {
+        return interestedInJapan;
+    }
+
+    public void setInterestedInJapan(Boolean interestedInJapan) {
+        this.interestedInJapan = interestedInJapan;
+    }
+
+    public String getProjectTypeExperience() {
+        return projectTypeExperience;
+    }
+
+    public void setProjectTypeExperience(String projectTypeExperience) {
+        this.projectTypeExperience = projectTypeExperience;
     }
 }
 
