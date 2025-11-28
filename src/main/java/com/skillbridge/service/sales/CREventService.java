@@ -72,6 +72,54 @@ public class CREventService {
 
         return crResourceEventRepository.save(event);
     }
+    
+    /**
+     * Create billing event from Change Request
+     * @param cr Change Request
+     * @param billingMonth Billing month
+     * @param deltaAmount Delta amount (positive or negative)
+     * @param description Description
+     * @param type Event type
+     * @return Created billing event
+     */
+    public CRBillingEvent createBillingEvent(
+            ChangeRequest cr,
+            LocalDate billingMonth,
+            BigDecimal deltaAmount,
+            String description,
+            CRBillingEvent.BillingEventType type) {
+        
+        CRBillingEvent event = new CRBillingEvent();
+        event.setChangeRequestId(cr.getId());
+        event.setBillingMonth(billingMonth);
+        event.setDeltaAmount(deltaAmount);
+        event.setDescription(description);
+        event.setType(type);
+        
+        return crBillingEventRepository.save(event);
+    }
+    
+    /**
+     * Get resource events for a SOW contract up to a specific date
+     * Only returns events from approved CRs
+     * @param sowContractId SOW contract ID
+     * @param asOfDate Date to check up to
+     * @return List of resource events
+     */
+    public List<CRResourceEvent> getResourceEvents(Integer sowContractId, LocalDate asOfDate) {
+        return crResourceEventRepository.findApprovedEventsUpToDate(sowContractId, asOfDate);
+    }
+    
+    /**
+     * Get billing events for a specific month
+     * Only returns events from approved CRs
+     * @param sowContractId SOW contract ID
+     * @param month Billing month
+     * @return List of billing events for the month
+     */
+    public List<CRBillingEvent> getBillingEvents(Integer sowContractId, LocalDate month) {
+        return crBillingEventRepository.findApprovedEventsByMonth(sowContractId, month);
+    }
 
     /**
      * Calculate current resources at a specific date

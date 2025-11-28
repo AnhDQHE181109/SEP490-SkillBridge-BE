@@ -331,31 +331,34 @@ public class ChangeRequestDetailService {
         logHistory(changeRequestId, "Approved", clientUserId);
 
         // For SOW contracts, handle based on engagement type (for non-Retainer)
-        if (sowContract != null) {
-            String engagementType = sowContract.getEngagementType();
-            // For Fixed Price SOW, create billing detail when approved
-            if ("Fixed Price".equals(engagementType)) {
-                // Check if impact analysis data exists (newEndDate and cost)
-                // Use costEstimatedByLandbridge if available, otherwise fallback to expectedExtraCost or amount
-                BigDecimal costToUse = changeRequest.getCostEstimatedByLandbridge();
-                if (costToUse == null) {
-                    costToUse = changeRequest.getExpectedExtraCost();
-                }
-                if (costToUse == null) {
-                    costToUse = changeRequest.getAmount();
-                }
+        if ("SOW".equals(changeRequest.getContractType()) && changeRequest.getSowContractId() != null && !isRetainerSOW) {
+            SOWContract sowContract = sowContractRepository.findById(changeRequest.getSowContractId())
+                    .orElse(null);
 
-                if (changeRequest.getNewEndDate() != null && costToUse != null) {
-                    // Ensure costEstimatedByLandbridge is set for billing detail creation
-                    if (changeRequest.getCostEstimatedByLandbridge() == null) {
-                        changeRequest.setCostEstimatedByLandbridge(costToUse);
-                        changeRequestRepository.save(changeRequest);
+            if (sowContract != null) {
+                String engagementType = sowContract.getEngagementType();
+                // For Fixed Price SOW, create billing detail when approved
+                if ("Fixed Price".equals(engagementType)) {
+                    // Check if impact analysis data exists (newEndDate and cost)
+                    // Use costEstimatedByLandbridge if available, otherwise fallback to expectedExtraCost or amount
+                    BigDecimal costToUse = changeRequest.getCostEstimatedByLandbridge();
+                    if (costToUse == null) {
+                        costToUse = changeRequest.getExpectedExtraCost();
                     }
-                    createBillingDetailForFixedPriceSOW(changeRequest, sowContract);
+                    if (costToUse == null) {
+                        costToUse = changeRequest.getAmount();
+                    }
+
+                    if (changeRequest.getNewEndDate() != null && costToUse != null) {
+                        // Ensure costEstimatedByLandbridge is set for billing detail creation
+                        if (changeRequest.getCostEstimatedByLandbridge() == null) {
+                            changeRequest.setCostEstimatedByLandbridge(costToUse);
+                            changeRequestRepository.save(changeRequest);
+                        }
+                        createBillingDetailForFixedPriceSOW(changeRequest, sowContract);
+                    }
                 }
-
             }
-
         }
     }
     
