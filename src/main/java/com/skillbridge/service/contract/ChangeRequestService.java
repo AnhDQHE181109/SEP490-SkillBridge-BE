@@ -90,7 +90,17 @@ public class ChangeRequestService {
             changeRequest.setContractId(contractId);
             changeRequest.setContractType("MSA");
         } else {
-            changeRequest.setSowContractId(contractId);
+            // For SOW contracts with versioning:
+            // - If contract has no parent_version_id, use contract's id (V1)
+            // - If contract has parent_version_id, use parent_version_id to reference V1
+            if (sowContract != null) {
+                Integer sowContractIdForCR = sowContract.getParentVersionId() != null
+                        ? sowContract.getParentVersionId()
+                        : sowContract.getId();
+                changeRequest.setSowContractId(sowContractIdForCR);
+            } else {
+                changeRequest.setSowContractId(contractId);
+            }
             changeRequest.setContractType("SOW");
         }
         
@@ -222,7 +232,7 @@ public class ChangeRequestService {
         if ("Fixed Price".equalsIgnoreCase(engagementType)) {
             validTypes = List.of("Add Scope", "Remove Scope", "Other");
         } else if ("Retainer".equalsIgnoreCase(engagementType)) {
-            validTypes = List.of("Extend Schedule", "Increase Resource", "Rate Change", "Other");
+            validTypes = List.of("RESOURCE_CHANGE", "SCHEDULE_CHANGE", "SCOPE_ADJUSTMENT");
         } else {
             return; // Unknown engagement type, skip validation
         }
