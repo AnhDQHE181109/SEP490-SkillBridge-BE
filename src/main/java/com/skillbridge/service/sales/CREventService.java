@@ -73,4 +73,85 @@ public class CREventService {
         return crResourceEventRepository.save(event);
     }
 
+    /**
+     * Calculate current resources at a specific date
+     * Current = Baseline + All approved events up to date
+     * @param sowContractId SOW contract ID
+     * @param asOfDate Date to calculate for
+     * @return List of current engineers (simulated from baseline + events)
+     */
+    public List<CurrentEngineerState> calculateCurrentResources(Integer sowContractId, LocalDate asOfDate) {
+        // Get baseline engineers active at the date
+        List<SOWEngagedEngineerBase> baselineEngineers = sowEngagedEngineerBaseRepository
+                .findActiveAtDate(sowContractId, asOfDate);
+
+        // Get all approved resource events up to the date
+        List<CRResourceEvent> events = getResourceEvents(sowContractId, asOfDate);
+
+        // Start with baseline engineers
+        List<CurrentEngineerState> currentState = new ArrayList<>();
+        for (SOWEngagedEngineerBase base : baselineEngineers) {
+            CurrentEngineerState state = new CurrentEngineerState();
+            state.setEngineerId(base.getId());
+            state.setRole(base.getRole());
+            state.setLevel(base.getLevel());
+            state.setRating(base.getRating());
+            state.setUnitRate(base.getUnitRate());
+            state.setStartDate(base.getStartDate());
+            state.setEndDate(base.getEndDate());
+            currentState.add(state);
+        }
+
+        // Apply events in chronological order
+        for (CRResourceEvent event : events) {
+            if (event.getEffectiveStart().isAfter(asOfDate)) {
+                continue; // Skip future events
+            }
+
+            switch (event.getAction()) {
+                case ADD:
+                    // Add new engineer
+                    CurrentEngineerState newEngineer = new CurrentEngineerState();
+                    newEngineer.setEngineerId(null); // New engineer, no base ID
+                    newEngineer.setRole(event.getRole());
+                    newEngineer.setLevel(event.getLevel());
+                    newEngineer.setRating(event.getRatingNew());
+                    newEngineer.setUnitRate(event.getUnitRateNew());
+                    newEngineer.setStartDate(event.getStartDateNew());
+                    newEngineer.setEndDate(event.getEndDateNew());
+                    currentState.add(newEngineer);
+                    break;
+
+                case REMOVE:
+                    // Remove engineer (set end date)
+                    if (event.getEngineerId() != null) {
+                        currentState.stream()
+                                .filter(e -> e.getEngineerId() != null && e.getEngineerId().equals(event.getEngineerId()))
+                                .forEach(e -> e.setEndDate(event.getEndDateNew()));
+                    }
+                    break;
+
+                case MODIFY:
+                    // Modify existing engineer
+                    if (event.getEngineerId() != null) {
+                        currentState.stream()
+                                .filter(e -> e.getEngineerId() != null && e.getEngineerId().equals(event.getEngineerId()))
+                                .forEach(e -> {
+                                    if (event.getRatingNew() != null) e.setRating(event.getRatingNew());
+                                    if (event.getUnitRateNew() != null) e.setUnitRate(event.getUnitRateNew());
+                                    if (event.getStartDateNew() != null) e.setStartDate(event.getStartDateNew());
+                                    if (event.getEndDateNew() != null) e.setEndDate(event.getEndDateNew());
+                                });
+                    }
+                    break;
+            }
+        }
+
+        // Filter out engineers that are not active at asOfDate
+        return currentState.stream()
+                .filter(e -> e.getStartDate().compareTo(asOfDate) <= 0 &&
+                        (e.getEndDate() == null || e.getEndDate().compareTo(asOfDate) >= 0))
+                .collect(Collectors.toList());
+    }
+
 }
