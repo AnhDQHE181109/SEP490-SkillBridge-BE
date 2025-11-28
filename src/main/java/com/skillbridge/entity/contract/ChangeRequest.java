@@ -92,6 +92,18 @@ public class ChangeRequest {
     @Column(name = "internal_reviewer_id")
     private Integer internalReviewerId; // User ID of the internal reviewer assigned to review the change request
 
+    @Column(name = "appendix_id")
+    private Integer appendixId; // FK to contract_appendices.id
+
+    @Column(name = "sales_internal_note", columnDefinition = "TEXT")
+    private String salesInternalNote;
+
+    @Column(name = "approved_by")
+    private Integer approvedBy; // FK to users.id
+
+    @Column(name = "approved_at")
+    private LocalDateTime approvedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -280,6 +292,38 @@ public class ChangeRequest {
 
     public void setInternalReviewerId(Integer internalReviewerId) {
         this.internalReviewerId = internalReviewerId;
+    }
+
+    public Integer getAppendixId() {
+        return appendixId;
+    }
+
+    public void setAppendixId(Integer appendixId) {
+        this.appendixId = appendixId;
+    }
+
+    public String getSalesInternalNote() {
+        return salesInternalNote;
+    }
+
+    public void setSalesInternalNote(String salesInternalNote) {
+        this.salesInternalNote = salesInternalNote;
+    }
+
+    public Integer getApprovedBy() {
+        return approvedBy;
+    }
+
+    public void setApprovedBy(Integer approvedBy) {
+        this.approvedBy = approvedBy;
+    }
+
+    public LocalDateTime getApprovedAt() {
+        return approvedAt;
+    }
+
+    public void setApprovedAt(LocalDateTime approvedAt) {
+        this.approvedAt = approvedAt;
     }
 
     public LocalDateTime getCreatedAt() {
