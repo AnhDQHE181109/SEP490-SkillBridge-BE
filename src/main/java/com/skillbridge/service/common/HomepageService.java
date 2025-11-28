@@ -16,6 +16,9 @@ public class HomepageService {
     @Autowired
     private EngineerRepository engineerRepository;
 
+    @Autowired(required = false)
+    private S3Service s3Service;
+
     /**
      * Get homepage statistics (total engineers and customers)
      */
@@ -99,7 +102,25 @@ public class HomepageService {
         profile.setSalaryExpectation(engineer.getSalaryExpectation());
         profile.setYearsExperience(engineer.getYearsExperience());
         profile.setLocation(engineer.getLocation());
-        profile.setProfileImageUrl(engineer.getProfileImageUrl());
+        
+        // Generate presigned URL if profileImageUrl is S3 key (not a full URL)
+        String profileImageUrl = engineer.getProfileImageUrl();
+        if (profileImageUrl != null && !profileImageUrl.isEmpty()) {
+            // If it's not a URL (doesn't start with http:// or https://), treat it as S3 key
+            if (!profileImageUrl.startsWith("http://") && !profileImageUrl.startsWith("https://")) {
+                // Generate presigned URL with 24 hours expiration
+                if (s3Service != null) {
+                    try {
+                        profileImageUrl = s3Service.getPresignedUrl(profileImageUrl, 24 * 60); // 24 hours
+                    } catch (Exception e) {
+                        // If S3 service is not available or key is invalid, use original value
+                        System.err.println("Failed to generate presigned URL for S3 key: " + profileImageUrl);
+                    }
+                }
+            }
+        }
+        profile.setProfileImageUrl(profileImageUrl);
+        
         profile.setPrimarySkill(engineer.getPrimarySkill());
         profile.setStatus(engineer.getStatus());
         profile.setSummary(engineer.getSummary());
