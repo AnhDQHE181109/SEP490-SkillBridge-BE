@@ -126,6 +126,50 @@ public class S3Service {
     }
 
     /**
+     * Upload file to S3 (private, use presigned URL for access)
+     * @param file MultipartFile to upload
+     * @param folder Folder path in S3 (e.g., "engineers", "profiles")
+     * @return S3 key of uploaded file (not URL, use getPresignedUrl to get access URL)
+     */
+    public String uploadPublicFile(MultipartFile file, String folder) throws IOException {
+        if (!s3Enabled || amazonS3 == null) {
+            throw new RuntimeException("S3 is not configured or enabled");
+        }
+
+        if (file.isEmpty()) {
+            throw new IllegalArgumentException("File is empty");
+        }
+
+        // Generate unique filename
+        String originalFilename = file.getOriginalFilename();
+        String extension = "";
+        if (originalFilename != null && originalFilename.contains(".")) {
+            extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+        }
+        String uniqueFilename = UUID.randomUUID().toString() + extension;
+        String s3Key = folder + "/" + uniqueFilename;
+
+        // Upload to S3 (private, no ACL set)
+        try (InputStream inputStream = file.getInputStream()) {
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentLength(file.getSize());
+            metadata.setContentType(file.getContentType());
+
+            PutObjectRequest putObjectRequest = new PutObjectRequest(
+                    bucketName,
+                    s3Key,
+                    inputStream,
+                    metadata
+            );
+
+            amazonS3.putObject(putObjectRequest);
+
+            // Return S3 key (not URL)
+            return s3Key;
+        }
+    }
+
+    /**
      * Delete file from S3 by URL (for backward compatibility)
      * @param s3Url S3 URL of the file to delete
      */
