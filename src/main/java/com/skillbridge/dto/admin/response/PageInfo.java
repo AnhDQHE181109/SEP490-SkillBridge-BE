@@ -17,6 +17,13 @@ public class PageInfo {
         this.pageSize = pageSize;
     }
 
+    public PageInfo(int currentPage, int pageSize, long total, int totalPages) {
+        this.total = total;
+        this.totalPages = totalPages;
+        this.currentPage = currentPage;
+        this.pageSize = pageSize;
+    }
+
     // Getters and Setters
     public long getTotal() {
         return total;
