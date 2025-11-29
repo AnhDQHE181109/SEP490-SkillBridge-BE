@@ -183,6 +183,112 @@ public class EmailService {
     }
 
     /**
+     * Send welcome email to newly created user
+     * @param user User entity
+     * @param plainPassword Plain text initial password
+     */
+    public void sendWelcomeEmail(User user, String plainPassword) {
+        try {
+            String userName = user.getFullName() != null ? user.getFullName() : "User";
+            String roleDisplay = "SALES_MANAGER".equals(user.getRole()) ? "Sale Manager" : 
+                               "SALES_REP".equals(user.getRole()) ? "Sale Rep" : user.getRole();
+            String loginUrl = baseUrl + "/admin/login";
+
+            // Build email subject
+            String subject = "Welcome to SkillBridge - Your Account Has Been Created";
+
+            // Build email body
+            StringBuilder bodyBuilder = new StringBuilder();
+            bodyBuilder.append("Dear ").append(userName).append(",\n\n");
+            bodyBuilder.append("Welcome to SkillBridge! Your account has been created successfully.\n\n");
+            
+            // Account information
+            bodyBuilder.append("Account Details:\n");
+            bodyBuilder.append("- Name: ").append(userName).append("\n");
+            bodyBuilder.append("- Role: ").append(roleDisplay).append("\n");
+            bodyBuilder.append("- Email: ").append(user.getEmail()).append("\n\n");
+
+            // Login credentials
+            bodyBuilder.append("Login Credentials:\n");
+            bodyBuilder.append("Login URL: ").append(loginUrl).append("\n");
+            bodyBuilder.append("Email: ").append(user.getEmail()).append("\n");
+            bodyBuilder.append("Initial Password: ").append(plainPassword).append("\n\n");
+
+            // Security reminder
+            bodyBuilder.append("IMPORTANT SECURITY REMINDER:\n");
+            bodyBuilder.append("For security reasons, please change your password after your first login.\n\n");
+
+            // Support information
+            bodyBuilder.append("If you have any questions or need assistance, please contact our support team.\n\n");
+            bodyBuilder.append("Best regards,\n");
+            bodyBuilder.append(smtpFromName).append("\n");
+            bodyBuilder.append("SkillBridge Team");
+
+            String body = bodyBuilder.toString();
+
+            // Send email if JavaMailSender is configured
+            if (javaMailSender != null) {
+                try {
+                    SimpleMailMessage message = new SimpleMailMessage();
+                    // Validate and format from email properly
+                    String fromEmailAddress = smtpFromEmail;
+                    if (fromEmailAddress == null || fromEmailAddress.trim().isEmpty()) {
+                        fromEmailAddress = "noreply@skillbridge.com";
+                    } else if (!fromEmailAddress.contains("@")) {
+                        // If from email doesn't have @, use a default format
+                        fromEmailAddress = fromEmailAddress + "@skillbridge.com";
+                    }
+                    // Validate email format
+                    if (!fromEmailAddress.matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
+                        System.err.println("Invalid from email format: " + fromEmailAddress);
+                        fromEmailAddress = "noreply@skillbridge.com";
+                    }
+                    message.setFrom(fromEmailAddress);
+                    message.setTo(user.getEmail());
+                    message.setSubject(subject);
+                    message.setText(body);
+                    javaMailSender.send(message);
+                    System.out.println("Welcome email sent successfully to: " + user.getEmail());
+                    System.out.println("From: " + fromEmailAddress);
+                } catch (Exception e) {
+                    // Log detailed error information
+                    System.err.println("=== ERROR: Failed to send welcome email ===");
+                    System.err.println("To: " + user.getEmail());
+                    System.err.println("From: " + smtpFromEmail);
+                    System.err.println("Error: " + e.getClass().getSimpleName());
+                    System.err.println("Message: " + e.getMessage());
+                    if (e.getCause() != null) {
+                        System.err.println("Cause: " + e.getCause().getMessage());
+                    }
+                    e.printStackTrace();
+                    System.err.println("================================================");
+                    // Don't throw exception - just log and continue
+                    // This ensures user creation is not blocked by email sending failure
+                }
+            } else {
+                System.out.println("JavaMailSender is not configured. Email will not be sent.");
+            }
+
+            // Log email content (for development/testing)
+            System.out.println("=== Welcome Email ===");
+            System.out.println("To: " + user.getEmail());
+            System.out.println("Subject: " + subject);
+            System.out.println("Body:\n" + body);
+            System.out.println("\n=== NEW USER ACCOUNT CREDENTIALS ===");
+            System.out.println("Email: " + user.getEmail());
+            System.out.println("Password: " + plainPassword);
+            System.out.println("Login URL: " + loginUrl);
+            System.out.println("===================================");
+            System.out.println("================================================");
+
+        } catch (Exception e) {
+            // Log error but don't fail the user creation
+            System.err.println("Failed to prepare welcome email: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
      * Send meeting invitation email to client
      * @param clientEmail Client email address
      * @param clientName Client name
