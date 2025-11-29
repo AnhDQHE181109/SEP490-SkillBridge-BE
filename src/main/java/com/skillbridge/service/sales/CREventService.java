@@ -2,6 +2,7 @@ package com.skillbridge.service.sales;
 
 import com.skillbridge.entity.contract.*;
 import com.skillbridge.repository.contract.*;
+import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,7 +11,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 
+/**
+ * CR Event Service
+ * Handles business logic for Change Request events (resource and billing)
+ * Events represent deltas/changes from approved CRs
+ */
 @Service
 @Transactional
 public class CREventService {
@@ -19,6 +28,18 @@ public class CREventService {
 
     @Autowired
     private CRResourceEventRepository crResourceEventRepository;
+    
+    @Autowired
+    private CRBillingEventRepository crBillingEventRepository;
+    
+    @Autowired
+    private ChangeRequestRepository changeRequestRepository;
+    
+    @Autowired
+    private SOWEngagedEngineerBaseRepository sowEngagedEngineerBaseRepository;
+    
+    @Autowired
+    private RetainerBillingBaseRepository retainerBillingBaseRepository;
 
     /**
      * Create resource event from Change Request
@@ -202,4 +223,28 @@ public class CREventService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Calculate current billing for a specific month
+     * Current = Baseline + Sum of all approved events for the month
+     * @param sowContractId SOW contract ID
+     * @param month Billing month
+     * @return Total billing amount for the month
+     */
+    public BigDecimal calculateCurrentBilling(Integer sowContractId, LocalDate month) {
+        // Get baseline billing for the month
+        BigDecimal baselineAmount = BigDecimal.ZERO;
+        var baselineBillingOpt = retainerBillingBaseRepository.findBySowContractIdAndBillingMonth(sowContractId, month);
+        if (baselineBillingOpt.isPresent()) {
+            baselineAmount = baselineBillingOpt.get().getAmount();
+        }
+        
+        // Get all billing events for the month
+        List<CRBillingEvent> events = getBillingEvents(sowContractId, month);
+        BigDecimal eventTotal = events.stream()
+            .map(CRBillingEvent::getDeltaAmount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        
+        return baselineAmount.add(eventTotal);
+    }
 }
+
