@@ -20,6 +20,9 @@ public class Skill {
     @Column(name = "parent_skill_id")
     private Integer parentSkillId;
 
+    @Column(name = "description", columnDefinition = "TEXT")
+    private String description;
+
     // Constructors
     public Skill() {
     }
@@ -31,6 +34,12 @@ public class Skill {
     public Skill(String name, Integer parentSkillId) {
         this.name = name;
         this.parentSkillId = parentSkillId;
+    }
+
+    public Skill(String name, Integer parentSkillId, String description) {
+        this.name = name;
+        this.parentSkillId = parentSkillId;
+        this.description = description;
     }
 
     // Getters and Setters
@@ -58,12 +67,21 @@ public class Skill {
         this.parentSkillId = parentSkillId;
     }
 
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
     @Override
     public String toString() {
         return "Skill{" +
                 "id=" + id +
                 ", name='" + name + '\'' +
                 ", parentSkillId=" + parentSkillId +
+                ", description='" + description + '\'' +
                 '}';
     }
 }
