@@ -1,8 +1,11 @@
 package com.skillbridge.controller.api.admin;
 
+import com.skillbridge.dto.admin.request.CreateSkillRequest;
+import com.skillbridge.dto.admin.request.CreateSubSkillRequest;
 import com.skillbridge.dto.admin.response.SkillListResponse;
 import com.skillbridge.dto.admin.response.SkillResponseDTO;
 import com.skillbridge.service.admin.AdminSkillService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -64,6 +67,45 @@ public class AdminMasterDataSkillController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Failed to get sub-skills: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Create a new skill with optional sub-skills
+     * POST /api/admin/master-data/skills
+     */
+    @PostMapping
+    public ResponseEntity<?> createSkill(@Valid @RequestBody CreateSkillRequest request) {
+        try {
+            SkillResponseDTO response = adminSkillService.createSkill(request);
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to create skill: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Create a new sub-skill
+     * POST /api/admin/master-data/skills/{skillId}/sub-skills
+     */
+    @PostMapping("/{skillId}/sub-skills")
+    public ResponseEntity<?> createSubSkill(
+            @PathVariable Integer skillId,
+            @Valid @RequestBody CreateSubSkillRequest request
+    ) {
+        try {
+            SkillResponseDTO response = adminSkillService.createSubSkill(skillId, request);
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to create sub-skill: " + e.getMessage()));
         }
     }
 
