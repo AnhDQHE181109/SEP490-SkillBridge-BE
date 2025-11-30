@@ -1,5 +1,8 @@
 package com.skillbridge.service.admin;
 
+import com.skillbridge.dto.admin.request.CreateSkillRequest;
+import com.skillbridge.dto.admin.request.CreateSubSkillRequest;
+import com.skillbridge.dto.admin.request.SubSkillRequest;
 import com.skillbridge.dto.admin.response.PageInfo;
 import com.skillbridge.dto.admin.response.SkillListResponse;
 import com.skillbridge.dto.admin.response.SkillResponseDTO;
@@ -72,6 +75,71 @@ public class AdminSkillService {
         return subSkills.stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Create a new skill with optional sub-skills
+     */
+    public SkillResponseDTO createSkill(CreateSkillRequest request) {
+        // Check if skill name already exists (parent skills must be unique)
+        skillRepository.findByNameAndParentSkillIdIsNull(request.getName())
+                .ifPresent(s -> {
+                    throw new RuntimeException("Skill name already exists: " + request.getName());
+                });
+
+        // Create parent skill
+        Skill parentSkill = new Skill();
+        parentSkill.setName(request.getName());
+        parentSkill.setDescription(request.getDescription());
+        parentSkill.setParentSkillId(null);
+
+        parentSkill = skillRepository.save(parentSkill);
+
+        // Create sub-skills if provided
+        if (request.getSubSkills() != null && !request.getSubSkills().isEmpty()) {
+            for (SubSkillRequest subSkillReq : request.getSubSkills()) {
+                // Check if sub-skill name already exists for this parent
+                skillRepository.findByNameAndParentSkillId(subSkillReq.getName(), parentSkill.getId())
+                        .ifPresent(s -> {
+                            throw new RuntimeException("Sub-skill name already exists for this parent: " + subSkillReq.getName());
+                        });
+
+                Skill subSkill = new Skill();
+                subSkill.setName(subSkillReq.getName());
+                subSkill.setParentSkillId(parentSkill.getId());
+                skillRepository.save(subSkill);
+            }
+        }
+
+        return convertToDTO(parentSkill);
+    }
+
+    /**
+     * Create a new sub-skill
+     */
+    public SkillResponseDTO createSubSkill(Integer parentSkillId, CreateSubSkillRequest request) {
+        // Validate parent skill exists and is a parent skill
+        Skill parentSkill = skillRepository.findById(parentSkillId)
+                .orElseThrow(() -> new RuntimeException("Parent skill not found"));
+
+        if (parentSkill.getParentSkillId() != null) {
+            throw new RuntimeException("Specified skill is not a parent skill");
+        }
+
+        // Check if sub-skill name already exists for this parent
+        skillRepository.findByNameAndParentSkillId(request.getName(), parentSkillId)
+                .ifPresent(s -> {
+                    throw new RuntimeException("Sub-skill name already exists for this parent: " + request.getName());
+                });
+
+        // Create sub-skill
+        Skill subSkill = new Skill();
+        subSkill.setName(request.getName());
+        subSkill.setParentSkillId(parentSkillId);
+
+        subSkill = skillRepository.save(subSkill);
+
+        return convertToDTO(subSkill);
     }
 
     /**
