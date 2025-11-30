@@ -2,6 +2,8 @@ package com.skillbridge.controller.api.admin;
 
 import com.skillbridge.dto.admin.request.CreateSkillRequest;
 import com.skillbridge.dto.admin.request.CreateSubSkillRequest;
+import com.skillbridge.dto.admin.request.UpdateSkillRequest;
+import com.skillbridge.dto.admin.request.UpdateSubSkillRequest;
 import com.skillbridge.dto.admin.response.SkillListResponse;
 import com.skillbridge.dto.admin.response.SkillResponseDTO;
 import com.skillbridge.service.admin.AdminSkillService;
@@ -106,6 +108,48 @@ public class AdminMasterDataSkillController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Failed to create sub-skill: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Update a skill
+     * PUT /api/admin/master-data/skills/{skillId}
+     */
+    @PutMapping("/{skillId}")
+    public ResponseEntity<?> updateSkill(
+            @PathVariable Integer skillId,
+            @Valid @RequestBody UpdateSkillRequest request
+    ) {
+        try {
+            SkillResponseDTO response = adminSkillService.updateSkill(skillId, request);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to update skill: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Update a sub-skill
+     * PUT /api/admin/master-data/skills/sub-skills/{subSkillId}
+     */
+    @PutMapping("/sub-skills/{subSkillId}")
+    public ResponseEntity<?> updateSubSkill(
+            @PathVariable Integer subSkillId,
+            @Valid @RequestBody UpdateSubSkillRequest request
+    ) {
+        try {
+            SkillResponseDTO response = adminSkillService.updateSubSkill(subSkillId, request);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to update sub-skill: " + e.getMessage()));
         }
     }
 
