@@ -988,6 +988,39 @@ public class SalesSOWContractController {
      * GET /sales/contracts/sow/{contractId}/events?type={resource|billing}&fromDate={date}&toDate={date}
      */
     @GetMapping("/{contractId}/events")
+    
+    /**
+     * Update payment status for billing detail
+     * PATCH /sales/contracts/sow/{contractId}/billing-details/{billingDetailId}/payment-status
+     */
+    @PatchMapping("/{contractId}/billing-details/{billingDetailId}/payment-status")
+    public ResponseEntity<?> updateBillingDetailPaymentStatus(
+        @PathVariable Integer contractId,
+        @PathVariable Integer billingDetailId,
+        @RequestParam Boolean isPaid,
+        @RequestParam String engagementType,
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+        
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+        
+        try {
+            contractService.updateBillingDetailPaymentStatus(contractId, billingDetailId, isPaid, engagementType, currentUser);
+            return ResponseEntity.ok().build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(400).body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to update payment status: " + e.getMessage()));
+        }
+    }
     public ResponseEntity<?> getSOWContractEvents(
         @PathVariable Integer contractId,
         @RequestParam(required = false) String type, // "resource" or "billing"

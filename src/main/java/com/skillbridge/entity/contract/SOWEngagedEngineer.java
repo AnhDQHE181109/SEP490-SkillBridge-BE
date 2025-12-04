@@ -29,6 +29,18 @@ public class SOWEngagedEngineer {
     @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
 
+    @Column(name = "billing_type", nullable = false, length = 20)
+    private String billingType = "Monthly"; // Monthly or Hourly
+
+    @Column(name = "hourly_rate", precision = 16, scale = 2)
+    private BigDecimal hourlyRate; // For hourly billing
+
+    @Column(name = "hours", precision = 10, scale = 2)
+    private BigDecimal hours; // For hourly billing
+
+    @Column(name = "subtotal", precision = 16, scale = 2)
+    private BigDecimal subtotal; // For hourly billing: hourlyRate * hours
+
     @Column(name = "rating", nullable = false, precision = 5, scale = 2)
     private BigDecimal rating; // percentage
 
@@ -95,6 +107,38 @@ public class SOWEngagedEngineer {
 
     public void setEndDate(LocalDate endDate) {
         this.endDate = endDate;
+    }
+
+    public String getBillingType() {
+        return billingType;
+    }
+
+    public void setBillingType(String billingType) {
+        this.billingType = billingType;
+    }
+
+    public BigDecimal getHourlyRate() {
+        return hourlyRate;
+    }
+
+    public void setHourlyRate(BigDecimal hourlyRate) {
+        this.hourlyRate = hourlyRate;
+    }
+
+    public BigDecimal getHours() {
+        return hours;
+    }
+
+    public void setHours(BigDecimal hours) {
+        this.hours = hours;
+    }
+
+    public BigDecimal getSubtotal() {
+        return subtotal;
+    }
+
+    public void setSubtotal(BigDecimal subtotal) {
+        this.subtotal = subtotal;
     }
 
     public BigDecimal getRating() {
