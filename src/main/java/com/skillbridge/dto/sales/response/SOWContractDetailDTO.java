@@ -499,8 +499,12 @@ public class SOWContractDetailDTO {
         private String engineerLevel;
         private String startDate; // Format: YYYY-MM-DD
         private String endDate; // Format: YYYY-MM-DD
+        private String billingType; // "Monthly" or "Hourly"
+        private Double hourlyRate; // For hourly billing
+        private Double hours; // For hourly billing
+        private Double subtotal; // For hourly billing: hourlyRate * hours
         private Double rating; // Percentage (0-100)
-        private Double salary; // Currency amount
+        private Double salary; // Currency amount (for monthly) or subtotal (for hourly)
 
         // Getters and Setters
         public Integer getId() {
@@ -535,6 +539,38 @@ public class SOWContractDetailDTO {
             this.endDate = endDate;
         }
 
+        public String getBillingType() {
+            return billingType;
+        }
+
+        public void setBillingType(String billingType) {
+            this.billingType = billingType;
+        }
+
+        public Double getHourlyRate() {
+            return hourlyRate;
+        }
+
+        public void setHourlyRate(Double hourlyRate) {
+            this.hourlyRate = hourlyRate;
+        }
+
+        public Double getHours() {
+            return hours;
+        }
+
+        public void setHours(Double hours) {
+            this.hours = hours;
+        }
+
+        public Double getSubtotal() {
+            return subtotal;
+        }
+
+        public void setSubtotal(Double subtotal) {
+            this.subtotal = subtotal;
+        }
+
         public Double getRating() {
             return rating;
         }
@@ -560,6 +596,7 @@ public class SOWContractDetailDTO {
         private Double percentage;
         private String invoiceDate; // Format: YYYY-MM-DD (for Fixed Price) or paymentDate (for Retainer)
         private String deliveryNote;
+        private Boolean isPaid;
 
         // Getters and Setters
         public Integer getId() {
@@ -616,6 +653,14 @@ public class SOWContractDetailDTO {
 
         public void setDeliveryNote(String deliveryNote) {
             this.deliveryNote = deliveryNote;
+        }
+
+        public Boolean getIsPaid() {
+            return isPaid;
+        }
+
+        public void setIsPaid(Boolean isPaid) {
+            this.isPaid = isPaid;
         }
     }
 

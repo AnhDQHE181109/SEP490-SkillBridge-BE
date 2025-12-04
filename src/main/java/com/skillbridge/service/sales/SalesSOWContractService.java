@@ -44,6 +44,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import com.skillbridge.dto.common.AttachmentInfo;
 
 /**
  * Sales SOW Contract Service
@@ -268,10 +269,10 @@ public class SalesSOWContractService {
         
         // Upload attachments and save to contract entity (similar to MSA)
         if (attachments != null && attachments.length > 0) {
-            List<String> fileLinks = uploadAttachments(contract.getId(), attachments, currentUser.getId());
-            if (!fileLinks.isEmpty()) {
-                contract.setLink(fileLinks.get(0)); // Store first file S3 key
-                contract.setAttachmentsManifest(gson.toJson(fileLinks));
+            List<AttachmentInfo> fileInfos = uploadAttachments(contract.getId(), attachments, currentUser.getId());
+            if (!fileInfos.isEmpty()) {
+                contract.setLink(fileInfos.get(0).getS3Key()); // Store first file S3 key
+                contract.setAttachmentsManifest(gson.toJson(fileInfos));
                 contract = sowContractRepository.save(contract); // Update with file links
                 sowContractRepository.flush(); // Force flush to database
             }
@@ -426,23 +427,41 @@ public class SalesSOWContractService {
         
         // Upload new attachments if any
         if (attachments != null && attachments.length > 0) {
-            List<String> fileLinks = uploadAttachments(contractId, attachments, currentUser.getId());
-            if (!fileLinks.isEmpty()) {
+            List<AttachmentInfo> fileInfos = uploadAttachments(contractId, attachments, currentUser.getId());
+            if (!fileInfos.isEmpty()) {
                 contract = sowContractRepository.findById(contractId)
                     .orElseThrow(() -> new RuntimeException("Contract not found after save"));
                 
-                List<String> existingLinks = new ArrayList<>();
+                List<AttachmentInfo> existingInfos = new ArrayList<>();
                 if (contract.getAttachmentsManifest() != null && !contract.getAttachmentsManifest().trim().isEmpty()) {
                     try {
-                        Type listType = new TypeToken<List<String>>(){}.getType();
-                        existingLinks = gson.fromJson(contract.getAttachmentsManifest(), listType);
+                        // Try to parse as List<AttachmentInfo> (new format)
+                        Type attachmentInfoListType = new TypeToken<List<AttachmentInfo>>(){}.getType();
+                        existingInfos = gson.fromJson(contract.getAttachmentsManifest(), attachmentInfoListType);
+                        if (existingInfos == null) {
+                            // Fallback: try to parse as List<String> (old format)
+                            Type stringListType = new TypeToken<List<String>>(){}.getType();
+                            List<String> existingLinks = gson.fromJson(contract.getAttachmentsManifest(), stringListType);
+                            if (existingLinks != null) {
+                                for (String s3Key : existingLinks) {
+                                    String fileName = s3Key;
+                                    if (fileName.contains("/")) {
+                                        fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                                    }
+                                    existingInfos.add(new AttachmentInfo(s3Key, fileName));
+                                }
+                            }
+                        }
                     } catch (Exception e) {
                         System.out.println("Error parsing attachments manifest: " + e.getMessage());
+                        existingInfos = new ArrayList<>();
                     }
                 }
-                
-                existingLinks.addAll(fileLinks);
-                contract.setAttachmentsManifest(gson.toJson(existingLinks));
+                if (existingInfos == null) {
+                    existingInfos = new ArrayList<>();
+                }
+                existingInfos.addAll(fileInfos);
+                contract.setAttachmentsManifest(gson.toJson(existingInfos));
                 contract = sowContractRepository.save(contract);
             }
         }
@@ -549,21 +568,50 @@ public class SalesSOWContractService {
         List<SOWContractDetailDTO.AttachmentDTO> attachments = new ArrayList<>();
         if (contract.getAttachmentsManifest() != null && !contract.getAttachmentsManifest().trim().isEmpty()) {
             try {
-                Type listType = new TypeToken<List<String>>(){}.getType();
-                List<String> attachmentLinks = gson.fromJson(contract.getAttachmentsManifest(), listType);
-                if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
-                    for (String s3Key : attachmentLinks) {
-                        if (s3Key != null && !s3Key.trim().isEmpty()) {
-                            String fileName = s3Key;
-                            if (fileName.contains("/")) {
-                                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                // Try to parse as List<AttachmentInfo> (new format with fileName)
+                Type attachmentInfoListType = new TypeToken<List<AttachmentInfo>>(){}.getType();
+                List<AttachmentInfo> attachmentInfos = gson.fromJson(contract.getAttachmentsManifest(), attachmentInfoListType);
+                if (attachmentInfos != null && !attachmentInfos.isEmpty()) {
+                    for (AttachmentInfo info : attachmentInfos) {
+                        if (info.getS3Key() != null && !info.getS3Key().trim().isEmpty()) {
+                            attachments.add(new SOWContractDetailDTO.AttachmentDTO(info.getS3Key(), info.getFileName(), null));
+                        }
+                    }
+                } else {
+                    // Fallback: try to parse as List<String> (old format)
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(contract.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
+                        for (String s3Key : attachmentLinks) {
+                            if (s3Key != null && !s3Key.trim().isEmpty()) {
+                                String fileName = s3Key;
+                                if (fileName.contains("/")) {
+                                    fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                                }
+                                attachments.add(new SOWContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
                             }
-                            attachments.add(new SOWContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
                         }
                     }
                 }
             } catch (Exception e) {
-                System.err.println("Error parsing attachments_manifest for SOW contract " + contractId + ": " + e.getMessage());
+                // If parsing as AttachmentInfo fails, try List<String> (old format)
+                try {
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(contract.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
+                        for (String s3Key : attachmentLinks) {
+                            if (s3Key != null && !s3Key.trim().isEmpty()) {
+                                String fileName = s3Key;
+                                if (fileName.contains("/")) {
+                                    fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                                }
+                                attachments.add(new SOWContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
+                            }
+                        }
+                    }
+                } catch (Exception e2) {
+                    System.err.println("Error parsing attachments_manifest for SOW contract " + contractId + ": " + e2.getMessage());
+                }
             }
         }
         
@@ -652,6 +700,7 @@ public class SalesSOWContractService {
                     }
                 }
                 dto.setDeliveryNote(deliveryNote);
+                dto.setIsPaid(billing.getIsPaid() != null ? billing.getIsPaid() : false);
                 billingDetails.add(dto);
             }
         } else if ("Retainer".equals(engagementType)) {
@@ -687,6 +736,11 @@ public class SalesSOWContractService {
                     dto.setEngineerLevel(state.getLevel() + " " + state.getRole()); // Combine level and role
                     dto.setStartDate(state.getStartDate() != null ? state.getStartDate().toString() : null);
                     dto.setEndDate(state.getEndDate() != null ? state.getEndDate().toString() : null);
+                    // Event-based system uses baseline which is Monthly by default
+                    dto.setBillingType("Monthly");
+                    dto.setHourlyRate(null);
+                    dto.setHours(null);
+                    dto.setSubtotal(null);
                     dto.setRating(state.getRating() != null ? state.getRating().doubleValue() : null);
                     dto.setSalary(state.getUnitRate() != null ? state.getUnitRate().doubleValue() : null);
                     engagedEngineers.add(dto);
@@ -742,6 +796,7 @@ public class SalesSOWContractService {
                     }
                     
                     dto.setDeliveryNote(description);
+                    dto.setIsPaid(false); // Event-based billing details don't have payment status
                     billingDetails.add(dto);
                 }
             } else {
@@ -754,6 +809,10 @@ public class SalesSOWContractService {
                     dto.setEngineerLevel(engineer.getEngineerLevel());
                     dto.setStartDate(engineer.getStartDate() != null ? engineer.getStartDate().toString() : null);
                     dto.setEndDate(engineer.getEndDate() != null ? engineer.getEndDate().toString() : null);
+                    dto.setBillingType(engineer.getBillingType() != null ? engineer.getBillingType() : "Monthly");
+                    dto.setHourlyRate(engineer.getHourlyRate() != null ? engineer.getHourlyRate().doubleValue() : null);
+                    dto.setHours(engineer.getHours() != null ? engineer.getHours().doubleValue() : null);
+                    dto.setSubtotal(engineer.getSubtotal() != null ? engineer.getSubtotal().doubleValue() : null);
                     dto.setRating(engineer.getRating() != null ? engineer.getRating().doubleValue() : null);
                     dto.setSalary(engineer.getSalary() != null ? engineer.getSalary().doubleValue() : null);
                     engagedEngineers.add(dto);
@@ -784,6 +843,7 @@ public class SalesSOWContractService {
                     dto.setPercentage(null); // Retainer doesn't have percentage
                     dto.setInvoiceDate(billing.getPaymentDate() != null ? billing.getPaymentDate().toString() : null);
                     dto.setDeliveryNote(billing.getDeliveryNote());
+                    dto.setIsPaid(billing.getIsPaid() != null ? billing.getIsPaid() : false);
                     billingDetails.add(dto);
                 }
             }
@@ -1003,11 +1063,46 @@ public class SalesSOWContractService {
             if (engineerDTO.getEndDate() != null && !engineerDTO.getEndDate().trim().isEmpty()) {
                 engineer.setEndDate(LocalDate.parse(engineerDTO.getEndDate()));
             }
-            if (engineerDTO.getRating() != null) {
-                engineer.setRating(BigDecimal.valueOf(engineerDTO.getRating()));
-            }
-            if (engineerDTO.getSalary() != null) {
-                engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSalary()));
+            // Set billing type (default to "Monthly" if not provided)
+            String billingType = (engineerDTO.getBillingType() != null && !engineerDTO.getBillingType().trim().isEmpty()) 
+                ? engineerDTO.getBillingType() : "Monthly";
+            engineer.setBillingType(billingType);
+            
+            if ("Hourly".equals(billingType)) {
+                // For hourly billing
+                if (engineerDTO.getHourlyRate() != null) {
+                    engineer.setHourlyRate(BigDecimal.valueOf(engineerDTO.getHourlyRate()));
+                }
+                if (engineerDTO.getHours() != null) {
+                    engineer.setHours(BigDecimal.valueOf(engineerDTO.getHours()));
+                }
+                if (engineerDTO.getSubtotal() != null) {
+                    engineer.setSubtotal(BigDecimal.valueOf(engineerDTO.getSubtotal()));
+                } else if (engineerDTO.getHourlyRate() != null && engineerDTO.getHours() != null) {
+                    // Auto-calculate subtotal if not provided
+                    engineer.setSubtotal(BigDecimal.valueOf(engineerDTO.getHourlyRate() * engineerDTO.getHours()));
+                }
+                // For hourly, rating represents hourly rate, so set salary to subtotal
+                if (engineerDTO.getSubtotal() != null) {
+                    engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSubtotal()));
+                } else if (engineerDTO.getSalary() != null) {
+                    engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSalary()));
+                }
+                // Rating is not used for hourly, but keep it for backward compatibility
+                if (engineerDTO.getRating() != null) {
+                    engineer.setRating(BigDecimal.valueOf(engineerDTO.getRating()));
+                }
+            } else {
+                // For monthly billing
+                engineer.setHourlyRate(null);
+                engineer.setHours(null);
+                engineer.setSubtotal(null);
+                if (engineerDTO.getRating() != null) {
+                    engineer.setRating(BigDecimal.valueOf(engineerDTO.getRating()));
+                }
+                if (engineerDTO.getSalary() != null) {
+                    engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSalary()));
+                }
             }
             sowEngagedEngineerRepository.save(engineer);
         }
@@ -1071,14 +1166,14 @@ public class SalesSOWContractService {
      * Upload attachments to S3
      * Returns list of S3 keys (similar to MSA)
      */
-    private List<String> uploadAttachments(Integer contractId, MultipartFile[] attachments, Integer ownerId) {
-        List<String> fileLinks = new ArrayList<>();
+    private List<AttachmentInfo> uploadAttachments(Integer contractId, MultipartFile[] attachments, Integer ownerId) {
+        List<AttachmentInfo> fileInfos = new ArrayList<>();
         System.out.println("uploadAttachments called: contractId=" + contractId + ", attachments.length=" + (attachments != null ? attachments.length : 0) + ", s3Enabled=" + s3Enabled + ", s3Service=" + (s3Service != null ? "not null" : "null"));
         
         // Skip upload if S3 is not configured or enabled
         if (!s3Enabled || s3Service == null) {
             System.out.println("S3 is not configured or enabled. Skipping file upload for contract: " + contractId);
-            return fileLinks;
+            return fileInfos;
         }
         
         for (MultipartFile file : attachments) {
@@ -1089,9 +1184,10 @@ public class SalesSOWContractService {
             
             // Validate file type (PDF only)
             String contentType = file.getContentType();
-            System.out.println("File: " + file.getOriginalFilename() + ", contentType: " + contentType + ", size: " + file.getSize());
+            String originalFileName = file.getOriginalFilename();
+            System.out.println("File: " + originalFileName + ", contentType: " + contentType + ", size: " + file.getSize());
             if (contentType == null || !contentType.equals("application/pdf")) {
-                System.out.println("Skipping non-PDF file: " + file.getOriginalFilename() + " (contentType: " + contentType + ")");
+                System.out.println("Skipping non-PDF file: " + originalFileName + " (contentType: " + contentType + ")");
                 continue; // Skip non-PDF files
             }
             
@@ -1099,7 +1195,7 @@ public class SalesSOWContractService {
                 // Upload to S3 (returns S3 key)
                 String s3Key = s3Service.uploadFile(file, "contracts/sow/" + contractId);
                 System.out.println("File uploaded successfully. S3 key: " + s3Key);
-                fileLinks.add(s3Key);
+                fileInfos.add(new AttachmentInfo(s3Key, originalFileName));
                 
                 // Save document metadata
                 DocumentMetadata metadata = new DocumentMetadata();
@@ -1113,18 +1209,18 @@ public class SalesSOWContractService {
                 documentMetadataRepository.save(metadata);
                 System.out.println("DocumentMetadata saved for S3 key: " + s3Key);
             } catch (IOException e) {
-                System.err.println("IOException uploading file: " + file.getOriginalFilename() + " - " + e.getMessage());
-                throw new RuntimeException("Failed to upload file: " + file.getOriginalFilename(), e);
+                System.err.println("IOException uploading file: " + originalFileName + " - " + e.getMessage());
+                throw new RuntimeException("Failed to upload file: " + originalFileName, e);
             } catch (RuntimeException e) {
                 // If S3 upload fails, log error but don't fail the entire contract creation
-                System.err.println("RuntimeException uploading file to S3: " + file.getOriginalFilename() + " - " + e.getMessage());
+                System.err.println("RuntimeException uploading file to S3: " + originalFileName + " - " + e.getMessage());
                 e.printStackTrace();
                 // Continue with other files
             }
         }
         
-        System.out.println("uploadAttachments returning " + fileLinks.size() + " file(s): " + fileLinks);
-        return fileLinks;
+        System.out.println("uploadAttachments returning " + fileInfos.size() + " file(s)");
+        return fileInfos;
     }
     
     /**
@@ -1349,11 +1445,46 @@ public class SalesSOWContractService {
                 if (engineerDTO.getEndDate() != null && !engineerDTO.getEndDate().trim().isEmpty()) {
                     engineer.setEndDate(LocalDate.parse(engineerDTO.getEndDate()));
                 }
-                if (engineerDTO.getRating() != null) {
-                    engineer.setRating(BigDecimal.valueOf(engineerDTO.getRating()));
-                }
-                if (engineerDTO.getSalary() != null) {
-                    engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSalary()));
+                // Set billing type (default to "Monthly" if not provided)
+                String billingType = (engineerDTO.getBillingType() != null && !engineerDTO.getBillingType().trim().isEmpty()) 
+                    ? engineerDTO.getBillingType() : "Monthly";
+                engineer.setBillingType(billingType);
+                
+                if ("Hourly".equals(billingType)) {
+                    // For hourly billing
+                    if (engineerDTO.getHourlyRate() != null) {
+                        engineer.setHourlyRate(BigDecimal.valueOf(engineerDTO.getHourlyRate()));
+                    }
+                    if (engineerDTO.getHours() != null) {
+                        engineer.setHours(BigDecimal.valueOf(engineerDTO.getHours()));
+                    }
+                    if (engineerDTO.getSubtotal() != null) {
+                        engineer.setSubtotal(BigDecimal.valueOf(engineerDTO.getSubtotal()));
+                    } else if (engineerDTO.getHourlyRate() != null && engineerDTO.getHours() != null) {
+                        // Auto-calculate subtotal if not provided
+                        engineer.setSubtotal(BigDecimal.valueOf(engineerDTO.getHourlyRate() * engineerDTO.getHours()));
+                    }
+                    // For hourly, set salary to subtotal
+                    if (engineerDTO.getSubtotal() != null) {
+                        engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSubtotal()));
+                    } else if (engineerDTO.getSalary() != null) {
+                        engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSalary()));
+                    }
+                    // Rating is not used for hourly, but keep it for backward compatibility
+                    if (engineerDTO.getRating() != null) {
+                        engineer.setRating(BigDecimal.valueOf(engineerDTO.getRating()));
+                    }
+                } else {
+                    // For monthly billing
+                    engineer.setHourlyRate(null);
+                    engineer.setHours(null);
+                    engineer.setSubtotal(null);
+                    if (engineerDTO.getRating() != null) {
+                        engineer.setRating(BigDecimal.valueOf(engineerDTO.getRating()));
+                    }
+                    if (engineerDTO.getSalary() != null) {
+                        engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSalary()));
+                    }
                 }
                 changeRequestEngagedEngineerRepository.save(engineer);
             }
@@ -1559,6 +1690,10 @@ public class SalesSOWContractService {
                 dto.setEngineerLevel(e.getEngineerLevel());
                 dto.setStartDate(e.getStartDate() != null ? e.getStartDate().toString() : null);
                 dto.setEndDate(e.getEndDate() != null ? e.getEndDate().toString() : null);
+                dto.setBillingType(e.getBillingType() != null ? e.getBillingType() : "Monthly");
+                dto.setHourlyRate(e.getHourlyRate() != null ? e.getHourlyRate().doubleValue() : null);
+                dto.setHours(e.getHours() != null ? e.getHours().doubleValue() : null);
+                dto.setSubtotal(e.getSubtotal() != null ? e.getSubtotal().doubleValue() : null);
                 dto.setRating(e.getRating() != null ? e.getRating().doubleValue() : null);
                 dto.setSalary(e.getSalary() != null ? e.getSalary().doubleValue() : null);
                 return dto;
@@ -1770,11 +1905,46 @@ public class SalesSOWContractService {
                 if (engineerDTO.getEndDate() != null && !engineerDTO.getEndDate().trim().isEmpty()) {
                     engineer.setEndDate(LocalDate.parse(engineerDTO.getEndDate()));
                 }
-                if (engineerDTO.getRating() != null) {
-                    engineer.setRating(BigDecimal.valueOf(engineerDTO.getRating()));
-                }
-                if (engineerDTO.getSalary() != null) {
-                    engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSalary()));
+                // Set billing type (default to "Monthly" if not provided)
+                String billingType = (engineerDTO.getBillingType() != null && !engineerDTO.getBillingType().trim().isEmpty()) 
+                    ? engineerDTO.getBillingType() : "Monthly";
+                engineer.setBillingType(billingType);
+                
+                if ("Hourly".equals(billingType)) {
+                    // For hourly billing
+                    if (engineerDTO.getHourlyRate() != null) {
+                        engineer.setHourlyRate(BigDecimal.valueOf(engineerDTO.getHourlyRate()));
+                    }
+                    if (engineerDTO.getHours() != null) {
+                        engineer.setHours(BigDecimal.valueOf(engineerDTO.getHours()));
+                    }
+                    if (engineerDTO.getSubtotal() != null) {
+                        engineer.setSubtotal(BigDecimal.valueOf(engineerDTO.getSubtotal()));
+                    } else if (engineerDTO.getHourlyRate() != null && engineerDTO.getHours() != null) {
+                        // Auto-calculate subtotal if not provided
+                        engineer.setSubtotal(BigDecimal.valueOf(engineerDTO.getHourlyRate() * engineerDTO.getHours()));
+                    }
+                    // For hourly, set salary to subtotal
+                    if (engineerDTO.getSubtotal() != null) {
+                        engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSubtotal()));
+                    } else if (engineerDTO.getSalary() != null) {
+                        engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSalary()));
+                    }
+                    // Rating is not used for hourly, but keep it for backward compatibility
+                    if (engineerDTO.getRating() != null) {
+                        engineer.setRating(BigDecimal.valueOf(engineerDTO.getRating()));
+                    }
+                } else {
+                    // For monthly billing
+                    engineer.setHourlyRate(null);
+                    engineer.setHours(null);
+                    engineer.setSubtotal(null);
+                    if (engineerDTO.getRating() != null) {
+                        engineer.setRating(BigDecimal.valueOf(engineerDTO.getRating()));
+                    }
+                    if (engineerDTO.getSalary() != null) {
+                        engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSalary()));
+                    }
                 }
                 changeRequestEngagedEngineerRepository.save(engineer);
             }
@@ -2648,6 +2818,54 @@ public class SalesSOWContractService {
         response.setResources(resourceDTOs);
         
         return response;
+    }
+    
+    /**
+     * Update payment status for billing detail
+     * @param contractId SOW contract ID
+     * @param billingDetailId Billing detail ID
+     * @param isPaid Payment status (true = paid, false = unpaid)
+     * @param engagementType "Fixed Price" or "Retainer"
+     * @param currentUser Current user
+     */
+    @Transactional
+    public void updateBillingDetailPaymentStatus(Integer contractId, Integer billingDetailId, Boolean isPaid, String engagementType, User currentUser) {
+        // Verify user has access
+        SOWContract contract = sowContractRepository.findById(contractId)
+            .orElseThrow(() -> new RuntimeException("SOW Contract not found"));
+        
+        // Check access permission
+        if (!"SALES_MANAGER".equals(currentUser.getRole())) {
+            if (contract.getAssigneeUserId() == null || !contract.getAssigneeUserId().equals(currentUser.getId())) {
+                throw new RuntimeException("Access denied: You can only update contracts assigned to you");
+            }
+        }
+        
+        if ("Fixed Price".equals(engagementType)) {
+            FixedPriceBillingDetail billing = fixedPriceBillingDetailRepository.findById(billingDetailId)
+                .orElseThrow(() -> new RuntimeException("Billing detail not found"));
+            
+            // Verify billing belongs to this contract
+            if (!billing.getSowContractId().equals(contractId)) {
+                throw new RuntimeException("Billing detail does not belong to this contract");
+            }
+            
+            billing.setIsPaid(isPaid != null ? isPaid : false);
+            fixedPriceBillingDetailRepository.save(billing);
+        } else if ("Retainer".equals(engagementType)) {
+            RetainerBillingDetail billing = retainerBillingDetailRepository.findById(billingDetailId)
+                .orElseThrow(() -> new RuntimeException("Billing detail not found"));
+            
+            // Verify billing belongs to this contract
+            if (!billing.getSowContractId().equals(contractId)) {
+                throw new RuntimeException("Billing detail does not belong to this contract");
+            }
+            
+            billing.setIsPaid(isPaid != null ? isPaid : false);
+            retainerBillingDetailRepository.save(billing);
+        } else {
+            throw new RuntimeException("Invalid engagement type: " + engagementType);
+        }
     }
 }
 
