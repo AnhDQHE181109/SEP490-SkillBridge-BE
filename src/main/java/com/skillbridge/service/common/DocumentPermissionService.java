@@ -29,16 +29,16 @@ public class DocumentPermissionService {
 
     @Autowired
     private DocumentMetadataRepository documentMetadataRepository;
-
+    
     @Autowired
     private ContractRepository contractRepository;
-
+    
     @Autowired
     private SOWContractRepository sowContractRepository;
-
+    
     @Autowired
     private ProposalRepository proposalRepository;
-
+    
     @Autowired
     private ContactRepository contactRepository;
 
@@ -139,7 +139,7 @@ public class DocumentPermissionService {
         if (metadata.getEntityType() != null && metadata.getEntityId() != null) {
             String entityType = metadata.getEntityType();
             Integer entityId = metadata.getEntityId();
-
+            
             // Check if user is CLIENT or CLIENT_USER
             if ("CLIENT".equals(user.getRole()) || "CLIENT_USER".equals(user.getRole())) {
                 // Check proposal - client can view proposals for their contacts
