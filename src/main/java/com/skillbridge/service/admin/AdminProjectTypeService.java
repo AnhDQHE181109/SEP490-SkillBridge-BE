@@ -1,5 +1,6 @@
 package com.skillbridge.service.admin;
 
+import com.skillbridge.dto.admin.request.CreateProjectTypeRequest;
 import com.skillbridge.dto.admin.response.ProjectTypeListResponse;
 import com.skillbridge.dto.admin.response.ProjectTypeResponseDTO;
 import com.skillbridge.entity.engineer.ProjectType;
@@ -54,6 +55,26 @@ public class AdminProjectTypeService {
         response.setPage(pageInfo);
 
         return response;
+    }
+
+    /**
+     * Create a new project type
+     */
+    public ProjectTypeResponseDTO createProjectType(CreateProjectTypeRequest request) {
+        // Check if project type name already exists
+        projectTypeRepository.findByName(request.getName())
+                .ifPresent(s -> {
+                    throw new RuntimeException("Project type name already exists: " + request.getName());
+                });
+
+        // Create project type
+        ProjectType projectType = new ProjectType();
+        projectType.setName(request.getName());
+        projectType.setDescription(request.getDescription());
+
+        projectType = projectTypeRepository.save(projectType);
+
+        return convertToDTO(projectType);
     }
 
     /**

@@ -1,7 +1,10 @@
 package com.skillbridge.controller.api.admin;
 
+import com.skillbridge.dto.admin.request.CreateProjectTypeRequest;
 import com.skillbridge.dto.admin.response.ProjectTypeListResponse;
+import com.skillbridge.dto.admin.response.ProjectTypeResponseDTO;
 import com.skillbridge.service.admin.AdminProjectTypeService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -43,6 +46,24 @@ public class AdminMasterDataProjectTypeController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Failed to get project types: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Create a new project type
+     * POST /api/admin/master-data/project-types
+     */
+    @PostMapping
+    public ResponseEntity<?> createProjectType(@Valid @RequestBody CreateProjectTypeRequest request) {
+        try {
+            ProjectTypeResponseDTO response = adminProjectTypeService.createProjectType(request);
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to create project type: " + e.getMessage()));
         }
     }
 
