@@ -265,6 +265,63 @@ public class AdminSkillService {
     }
 
     /**
+     * Delete a skill (with cascade delete of sub-skills)
+     */
+    public void deleteSkill(Integer skillId) {
+        Skill skill = skillRepository.findById(skillId)
+                .orElseThrow(() -> new RuntimeException("Skill not found"));
+
+        // Check if skill is a parent skill
+        if (skill.getParentSkillId() != null) {
+            throw new RuntimeException("Cannot delete a sub-skill using this endpoint. Use delete sub-skill endpoint.");
+        }
+
+        // Check if skill is in use
+        if (isSkillInUse(skillId)) {
+            throw new RuntimeException("Cannot delete skill. It is currently in use by engineers.");
+        }
+
+        // Get all sub-skills
+        List<Skill> subSkills = skillRepository.findByParentSkillId(skillId);
+
+        // Check if any sub-skill is in use
+        for (Skill subSkill : subSkills) {
+            if (isSubSkillInUse(subSkill.getId())) {
+                throw new RuntimeException("Cannot delete skill. One or more sub-skills are currently in use by engineers.");
+            }
+        }
+
+        // Delete all sub-skills first (cascade delete)
+        for (Skill subSkill : subSkills) {
+            skillRepository.deleteById(subSkill.getId());
+        }
+
+        // Delete parent skill
+        skillRepository.deleteById(skillId);
+    }
+
+    /**
+     * Delete a sub-skill
+     */
+    public void deleteSubSkill(Integer subSkillId) {
+        Skill subSkill = skillRepository.findById(subSkillId)
+                .orElseThrow(() -> new RuntimeException("Sub-skill not found"));
+
+        // Check if skill is a sub-skill
+        if (subSkill.getParentSkillId() == null) {
+            throw new RuntimeException("Cannot delete a parent skill using this endpoint. Use delete skill endpoint.");
+        }
+
+        // Check if sub-skill is in use
+        if (isSubSkillInUse(subSkillId)) {
+            throw new RuntimeException("Cannot delete sub-skill. It is currently in use by engineers.");
+        }
+
+        // Delete sub-skill
+        skillRepository.deleteById(subSkillId);
+    }
+
+    /**
      * Check if a skill is in use by engineers
      */
     public boolean isSkillInUse(Integer skillId) {
