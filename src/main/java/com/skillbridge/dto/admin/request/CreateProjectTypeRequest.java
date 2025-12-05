@@ -1,0 +1,44 @@
+package com.skillbridge.dto.admin.request;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+/**
+ * Create Project Type Request DTO
+ * Request body for creating a new project type
+ */
+public class CreateProjectTypeRequest {
+
+    @NotBlank(message = "Project type name is required")
+    @Size(max = 128, message = "Project type name must not exceed 128 characters")
+    private String name;
+
+    private String description;
+
+    // Constructors
+    public CreateProjectTypeRequest() {
+    }
+
+    public CreateProjectTypeRequest(String name, String description) {
+        this.name = name;
+        this.description = description;
+    }
+
+    // Getters and Setters
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+}
+
