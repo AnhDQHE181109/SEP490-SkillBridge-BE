@@ -1,9 +1,6 @@
 package com.skillbridge.controller.api.admin;
 
-import com.skillbridge.dto.admin.request.CreateSkillRequest;
-import com.skillbridge.dto.admin.request.CreateSubSkillRequest;
-import com.skillbridge.dto.admin.request.UpdateSkillRequest;
-import com.skillbridge.dto.admin.request.UpdateSubSkillRequest;
+import com.skillbridge.dto.admin.request.*;
 import com.skillbridge.dto.admin.response.SkillListResponse;
 import com.skillbridge.dto.admin.response.SkillResponseDTO;
 import com.skillbridge.service.admin.AdminSkillService;
@@ -150,6 +147,42 @@ public class AdminMasterDataSkillController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Failed to update sub-skill: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Delete a skill (with cascade delete of sub-skills)
+     * DELETE /api/admin/master-data/skills/{skillId}
+     */
+    @DeleteMapping("/{skillId}")
+    public ResponseEntity<?> deleteSkill(@PathVariable Integer skillId) {
+        try {
+            adminSkillService.deleteSkill(skillId);
+            return ResponseEntity.ok().build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to delete skill: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Delete a sub-skill
+     * DELETE /api/admin/master-data/skills/sub-skills/{subSkillId}
+     */
+    @DeleteMapping("/sub-skills/{subSkillId}")
+    public ResponseEntity<?> deleteSubSkill(@PathVariable Integer subSkillId) {
+        try {
+            adminSkillService.deleteSubSkill(subSkillId);
+            return ResponseEntity.ok().build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to delete sub-skill: " + e.getMessage()));
         }
     }
 
