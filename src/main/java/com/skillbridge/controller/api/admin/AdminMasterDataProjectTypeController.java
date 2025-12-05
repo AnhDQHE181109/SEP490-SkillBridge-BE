@@ -1,6 +1,7 @@
 package com.skillbridge.controller.api.admin;
 
 import com.skillbridge.dto.admin.request.CreateProjectTypeRequest;
+import com.skillbridge.dto.admin.request.UpdateProjectTypeRequest;
 import com.skillbridge.dto.admin.response.ProjectTypeListResponse;
 import com.skillbridge.dto.admin.response.ProjectTypeResponseDTO;
 import com.skillbridge.service.admin.AdminProjectTypeService;
@@ -64,6 +65,45 @@ public class AdminMasterDataProjectTypeController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Failed to create project type: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Update a project type
+     * PUT /api/admin/master-data/project-types/{id}
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateProjectType(
+            @PathVariable Integer id,
+            @Valid @RequestBody UpdateProjectTypeRequest request
+    ) {
+        try {
+            ProjectTypeResponseDTO response = adminProjectTypeService.updateProjectType(id, request);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to update project type: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Delete a project type
+     * DELETE /api/admin/master-data/project-types/{id}
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteProjectType(@PathVariable Integer id) {
+        try {
+            adminProjectTypeService.deleteProjectType(id);
+            return ResponseEntity.ok().build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to delete project type: " + e.getMessage()));
         }
     }
 
