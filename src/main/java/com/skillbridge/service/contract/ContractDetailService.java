@@ -20,6 +20,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+import com.skillbridge.dto.common.AttachmentInfo;
 
 /**
  * Contract Detail Service
@@ -143,21 +144,50 @@ public class ContractDetailService {
         // First, try to load from attachments_manifest
         if (contract.getAttachmentsManifest() != null && !contract.getAttachmentsManifest().trim().isEmpty()) {
             try {
-                Type listType = new TypeToken<List<String>>(){}.getType();
-                List<String> attachmentLinks = gson.fromJson(contract.getAttachmentsManifest(), listType);
-                if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
-                    for (String s3Key : attachmentLinks) {
-                        if (s3Key != null && !s3Key.trim().isEmpty()) {
-                            String fileName = s3Key;
-                            if (fileName.contains("/")) {
-                                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                // Try to parse as List<AttachmentInfo> (new format with fileName)
+                Type attachmentInfoListType = new TypeToken<List<AttachmentInfo>>(){}.getType();
+                List<AttachmentInfo> attachmentInfos = gson.fromJson(contract.getAttachmentsManifest(), attachmentInfoListType);
+                if (attachmentInfos != null && !attachmentInfos.isEmpty()) {
+                    for (AttachmentInfo info : attachmentInfos) {
+                        if (info.getS3Key() != null && !info.getS3Key().trim().isEmpty()) {
+                            attachments.add(new ContractDetailDTO.AttachmentDTO(info.getS3Key(), info.getFileName(), null));
+                        }
+                    }
+                } else {
+                    // Fallback: try to parse as List<String> (old format)
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(contract.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
+                        for (String s3Key : attachmentLinks) {
+                            if (s3Key != null && !s3Key.trim().isEmpty()) {
+                                String fileName = s3Key;
+                                if (fileName.contains("/")) {
+                                    fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                                }
+                                attachments.add(new ContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
                             }
-                            attachments.add(new ContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
                         }
                     }
                 }
             } catch (Exception e) {
-                System.err.println("Error parsing attachments_manifest for contract " + contract.getId() + ": " + e.getMessage());
+                // If parsing as AttachmentInfo fails, try List<String> (old format)
+                try {
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(contract.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
+                        for (String s3Key : attachmentLinks) {
+                            if (s3Key != null && !s3Key.trim().isEmpty()) {
+                                String fileName = s3Key;
+                                if (fileName.contains("/")) {
+                                    fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                                }
+                                attachments.add(new ContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
+                            }
+                        }
+                    }
+                } catch (Exception e2) {
+                    System.err.println("Error parsing attachments_manifest for contract " + contract.getId() + ": " + e2.getMessage());
+                }
             }
         }
         
@@ -362,21 +392,50 @@ public class ContractDetailService {
         // First, try to load from attachments_manifest
         if (sow.getAttachmentsManifest() != null && !sow.getAttachmentsManifest().trim().isEmpty()) {
             try {
-                Type listType = new TypeToken<List<String>>(){}.getType();
-                List<String> attachmentLinks = gson.fromJson(sow.getAttachmentsManifest(), listType);
-                if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
-                    for (String s3Key : attachmentLinks) {
-                        if (s3Key != null && !s3Key.trim().isEmpty()) {
-                            String fileName = s3Key;
-                            if (fileName.contains("/")) {
-                                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                // Try to parse as List<AttachmentInfo> (new format with fileName)
+                Type attachmentInfoListType = new TypeToken<List<AttachmentInfo>>(){}.getType();
+                List<AttachmentInfo> attachmentInfos = gson.fromJson(sow.getAttachmentsManifest(), attachmentInfoListType);
+                if (attachmentInfos != null && !attachmentInfos.isEmpty()) {
+                    for (AttachmentInfo info : attachmentInfos) {
+                        if (info.getS3Key() != null && !info.getS3Key().trim().isEmpty()) {
+                            attachments.add(new ContractDetailDTO.AttachmentDTO(info.getS3Key(), info.getFileName(), null));
+                        }
+                    }
+                } else {
+                    // Fallback: try to parse as List<String> (old format)
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(sow.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
+                        for (String s3Key : attachmentLinks) {
+                            if (s3Key != null && !s3Key.trim().isEmpty()) {
+                                String fileName = s3Key;
+                                if (fileName.contains("/")) {
+                                    fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                                }
+                                attachments.add(new ContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
                             }
-                            attachments.add(new ContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
                         }
                     }
                 }
             } catch (Exception e) {
-                System.err.println("Error parsing attachments_manifest for SOW contract " + sow.getId() + ": " + e.getMessage());
+                // If parsing as AttachmentInfo fails, try List<String> (old format)
+                try {
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(sow.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
+                        for (String s3Key : attachmentLinks) {
+                            if (s3Key != null && !s3Key.trim().isEmpty()) {
+                                String fileName = s3Key;
+                                if (fileName.contains("/")) {
+                                    fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                                }
+                                attachments.add(new ContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
+                            }
+                        }
+                    }
+                } catch (Exception e2) {
+                    System.err.println("Error parsing attachments_manifest for SOW contract " + sow.getId() + ": " + e2.getMessage());
+                }
             }
         }
         
@@ -759,6 +818,10 @@ public class ContractDetailService {
         dto.setEngineerLevel(engineer.getEngineerLevel());
         dto.setStartDate(formatDate(engineer.getStartDate()));
         dto.setEndDate(formatDate(engineer.getEndDate()));
+        dto.setBillingType(engineer.getBillingType() != null ? engineer.getBillingType() : "Monthly");
+        dto.setHourlyRate(engineer.getHourlyRate() != null ? engineer.getHourlyRate().doubleValue() : null);
+        dto.setHours(engineer.getHours() != null ? engineer.getHours().doubleValue() : null);
+        dto.setSubtotal(engineer.getSubtotal() != null ? engineer.getSubtotal().doubleValue() : null);
         dto.setRating(engineer.getRating() != null ? engineer.getRating().doubleValue() : null);
         dto.setSalary(engineer.getSalary() != null ? engineer.getSalary().doubleValue() : null);
         return dto;

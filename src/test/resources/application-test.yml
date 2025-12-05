@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: skillbridge-backend-test
+  
+  # Disable security for testing
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.security.servlet.ManagementWebSecurityAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.flywaydb.flyway.FlywayAutoConfiguration
+  
+  # Disable database completely for unit tests (using mocks)
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+  
+  # Disable Flyway for tests
+  flyway:
+    enabled: false
+
+# Disable mail for testing
+mail:
+  host: localhost
+  port: 25
+
+# JWT Configuration (minimal for testing)
+jwt:
+  secret: test-secret-key-for-testing-only
+  expiration: 86400000
+
+logging:
+  level:
+    com.skillbridge: INFO
+    org.springframework: WARN
+    org.hibernate: WARN
+

@@ -59,7 +59,7 @@ public class ChangeRequestDetailService {
     
     @Autowired
     private UserRepository userRepository;
-
+    
     @Autowired
     private com.skillbridge.service.sales.SalesSOWContractService salesSOWContractService;
     
@@ -283,60 +283,60 @@ public class ChangeRequestDetailService {
         Integer clientUserId
     ) {
         ChangeRequest changeRequest = validateAndGetChangeRequest(contractId, changeRequestId, clientUserId);
-
+        
         // Validate status is "Under Review" or "Client Under Review"
         if (!"Under Review".equals(changeRequest.getStatus()) && !"Client Under Review".equals(changeRequest.getStatus())) {
             throw new IllegalStateException("Only Under Review or Client Under Review change requests can be approved");
         }
-
+        
         // For SOW contracts, handle based on engagement type
         // For Retainer SOW, we need to create version BEFORE changing status
         boolean isRetainerSOW = false;
         if ("SOW".equals(changeRequest.getContractType()) && changeRequest.getSowContractId() != null) {
             SOWContract sowContract = sowContractRepository.findById(changeRequest.getSowContractId())
-                    .orElse(null);
-
+                .orElse(null);
+            
             if (sowContract != null) {
                 String engagementType = sowContract.getEngagementType();
-
+                
                 // For Retainer SOW, create new version and apply changes BEFORE changing status
                 if ("Retainer".equals(engagementType) || "Retainer_".equals(engagementType)) {
                     isRetainerSOW = true;
                     // Get client user for approval
                     User clientUser = userRepository.findById(clientUserId)
-                            .orElseThrow(() -> new IllegalStateException("Client user not found"));
-
+                        .orElseThrow(() -> new IllegalStateException("Client user not found"));
+                    
                     // Use SalesSOWContractService to approve and create version
                     // This will create a new version and apply changes
                     // Note: approveChangeRequestForSOW now accepts "Under Review" and "Client Under Review" status
                     // IMPORTANT: Call this BEFORE changing status to "Active"
                     salesSOWContractService.approveChangeRequestForSOW(
-                            changeRequest.getSowContractId(),
-                            changeRequestId,
-                            null, // No review notes from client approval
-                            clientUser
+                        changeRequest.getSowContractId(),
+                        changeRequestId,
+                        null, // No review notes from client approval
+                        clientUser
                     );
-
-                    logger.info("Retainer SOW change request approved by client, new version created: CR-{}, SOW-{}",
-                            changeRequest.getChangeRequestId(), sowContract.getId());
+                    
+                    logger.info("Retainer SOW change request approved by client, new version created: CR-{}, SOW-{}", 
+                        changeRequest.getChangeRequestId(), sowContract.getId());
                 }
             }
         }
-
+        
         // Change status to "Active" (after version creation for Retainer SOW)
         changeRequest.setStatus("Active");
         changeRequestRepository.save(changeRequest);
-
+        
         // Log history
         logHistory(changeRequestId, "Approved", clientUserId);
-
+        
         // For SOW contracts, handle based on engagement type (for non-Retainer)
         if ("SOW".equals(changeRequest.getContractType()) && changeRequest.getSowContractId() != null && !isRetainerSOW) {
             SOWContract sowContract = sowContractRepository.findById(changeRequest.getSowContractId())
-                    .orElse(null);
-
+                .orElse(null);
+            
             if (sowContract != null) {
-                String engagementType = sowContract.getEngagementType();
+                String engagementType = sowContract.getEngagementType(); 
                 // For Fixed Price SOW, create billing detail when approved
                 if ("Fixed Price".equals(engagementType)) {
                     // Check if impact analysis data exists (newEndDate and cost)
@@ -348,7 +348,7 @@ public class ChangeRequestDetailService {
                     if (costToUse == null) {
                         costToUse = changeRequest.getAmount();
                     }
-
+                    
                     if (changeRequest.getNewEndDate() != null && costToUse != null) {
                         // Ensure costEstimatedByLandbridge is set for billing detail creation
                         if (changeRequest.getCostEstimatedByLandbridge() == null) {

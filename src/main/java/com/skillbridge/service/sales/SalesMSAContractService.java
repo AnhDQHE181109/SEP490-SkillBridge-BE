@@ -48,6 +48,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import com.skillbridge.dto.common.AttachmentInfo;
 
 /**
  * Sales MSA Contract Service
@@ -187,10 +188,10 @@ public class SalesMSAContractService {
         
         // Upload attachments and save to contract entity (similar to Proposal)
         if (attachments != null && attachments.length > 0) {
-            List<String> fileLinks = uploadAttachments(contract.getId(), attachments, currentUser.getId());
-            if (!fileLinks.isEmpty()) {
-                contract.setLink(fileLinks.get(0)); // Store first file S3 key
-                contract.setAttachmentsManifest(gson.toJson(fileLinks));
+            List<AttachmentInfo> fileInfos = uploadAttachments(contract.getId(), attachments, currentUser.getId());
+            if (!fileInfos.isEmpty()) {
+                contract.setLink(fileInfos.get(0).getS3Key()); // Store first file S3 key
+                contract.setAttachmentsManifest(gson.toJson(fileInfos));
                 contract = contractRepository.save(contract); // Update with file links
             }
         }
@@ -331,22 +332,51 @@ public class SalesMSAContractService {
         // First, try to load from attachments_manifest
         if (contract.getAttachmentsManifest() != null && !contract.getAttachmentsManifest().trim().isEmpty()) {
             try {
-                Type listType = new TypeToken<List<String>>(){}.getType();
-                List<String> attachmentLinks = gson.fromJson(contract.getAttachmentsManifest(), listType);
-                if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
-                    for (String s3Key : attachmentLinks) {
-                        if (s3Key != null && !s3Key.trim().isEmpty()) {
-                            String fileName = s3Key;
-                            if (fileName.contains("/")) {
-                                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                // Try to parse as List<AttachmentInfo> (new format with fileName)
+                Type attachmentInfoListType = new TypeToken<List<AttachmentInfo>>(){}.getType();
+                List<AttachmentInfo> attachmentInfos = gson.fromJson(contract.getAttachmentsManifest(), attachmentInfoListType);
+                if (attachmentInfos != null && !attachmentInfos.isEmpty()) {
+                    for (AttachmentInfo info : attachmentInfos) {
+                        if (info.getS3Key() != null && !info.getS3Key().trim().isEmpty()) {
+                            attachments.add(new MSAContractDetailDTO.AttachmentDTO(info.getS3Key(), info.getFileName(), null));
+                        }
+                    }
+                } else {
+                    // Fallback: try to parse as List<String> (old format)
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(contract.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
+                        for (String s3Key : attachmentLinks) {
+                            if (s3Key != null && !s3Key.trim().isEmpty()) {
+                                String fileName = s3Key;
+                                if (fileName.contains("/")) {
+                                    fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                                }
+                                attachments.add(new MSAContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
                             }
-                            attachments.add(new MSAContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
                         }
                     }
                 }
             } catch (Exception e) {
-                System.err.println("Error parsing attachments_manifest for contract " + contractId + ": " + e.getMessage());
-                // Continue to fallback
+                // If parsing as AttachmentInfo fails, try List<String> (old format)
+                try {
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(contract.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null && !attachmentLinks.isEmpty()) {
+                        for (String s3Key : attachmentLinks) {
+                            if (s3Key != null && !s3Key.trim().isEmpty()) {
+                                String fileName = s3Key;
+                                if (fileName.contains("/")) {
+                                    fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                                }
+                                attachments.add(new MSAContractDetailDTO.AttachmentDTO(s3Key, fileName, null));
+                            }
+                        }
+                    }
+                } catch (Exception e2) {
+                    System.err.println("Error parsing attachments_manifest for contract " + contractId + ": " + e2.getMessage());
+                    // Continue to fallback
+                }
             }
         }
         
@@ -583,35 +613,50 @@ public class SalesMSAContractService {
         // Upload new attachments if any and save to contract entity (similar to Proposal)
         if (attachments != null && attachments.length > 0) {
             System.out.println("Uploading " + attachments.length + " attachment(s) for contract " + contract.getId());
-            List<String> fileLinks = uploadAttachments(contract.getId(), attachments, currentUser.getId());
-            System.out.println("Uploaded " + fileLinks.size() + " file(s). S3 keys: " + fileLinks);
+            List<AttachmentInfo> fileInfos = uploadAttachments(contract.getId(), attachments, currentUser.getId());
+            System.out.println("Uploaded " + fileInfos.size() + " file(s)");
             
-            if (!fileLinks.isEmpty()) {
+            if (!fileInfos.isEmpty()) {
                 // Reload contract to get latest state
                 contract = contractRepository.findById(contract.getId())
                     .orElseThrow(() -> new RuntimeException("Contract not found after save"));
                 
                 // If contract already has attachments, merge with new ones
-                List<String> existingLinks = new ArrayList<>();
+                List<AttachmentInfo> existingInfos = new ArrayList<>();
                 if (contract.getAttachmentsManifest() != null && !contract.getAttachmentsManifest().trim().isEmpty()) {
                     try {
-                        Type listType = new TypeToken<List<String>>(){}.getType();
-                        existingLinks = gson.fromJson(contract.getAttachmentsManifest(), listType);
-                        if (existingLinks == null) {
-                            existingLinks = new ArrayList<>();
+                        // Try to parse as List<AttachmentInfo> (new format)
+                        Type attachmentInfoListType = new TypeToken<List<AttachmentInfo>>(){}.getType();
+                        existingInfos = gson.fromJson(contract.getAttachmentsManifest(), attachmentInfoListType);
+                        if (existingInfos == null) {
+                            // Fallback: try to parse as List<String> (old format)
+                            Type stringListType = new TypeToken<List<String>>(){}.getType();
+                            List<String> existingLinks = gson.fromJson(contract.getAttachmentsManifest(), stringListType);
+                            if (existingLinks != null) {
+                                for (String s3Key : existingLinks) {
+                                    String fileName = s3Key;
+                                    if (fileName.contains("/")) {
+                                        fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                                    }
+                                    existingInfos.add(new AttachmentInfo(s3Key, fileName));
+                                }
+                            }
                         }
-                        System.out.println("Existing attachments from manifest: " + existingLinks);
+                        System.out.println("Existing attachments from manifest: " + existingInfos.size());
                     } catch (Exception e) {
                         System.err.println("Error parsing existing attachments_manifest: " + e.getMessage());
                         // If parsing fails, start fresh
-                        existingLinks = new ArrayList<>();
+                        existingInfos = new ArrayList<>();
                     }
                 }
-                existingLinks.addAll(fileLinks);
-                System.out.println("Merged attachments list: " + existingLinks);
+                if (existingInfos == null) {
+                    existingInfos = new ArrayList<>();
+                }
+                existingInfos.addAll(fileInfos);
+                System.out.println("Merged attachments list: " + existingInfos.size() + " files");
                 
-                contract.setLink(existingLinks.get(0)); // Store first file S3 key
-                contract.setAttachmentsManifest(gson.toJson(existingLinks));
+                contract.setLink(existingInfos.get(0).getS3Key()); // Store first file S3 key
+                contract.setAttachmentsManifest(gson.toJson(existingInfos));
                 System.out.println("Saving contract with link: " + contract.getLink() + ", manifest: " + contract.getAttachmentsManifest());
                 
                 contract = contractRepository.save(contract); // Update with file links
@@ -733,15 +778,15 @@ public class SalesMSAContractService {
      * Upload attachments to S3
      * Returns list of S3 keys (similar to Proposal)
      */
-    private List<String> uploadAttachments(Integer contractId, MultipartFile[] attachments, Integer ownerId) {
-        List<String> fileLinks = new ArrayList<>();
+    private List<AttachmentInfo> uploadAttachments(Integer contractId, MultipartFile[] attachments, Integer ownerId) {
+        List<AttachmentInfo> fileInfos = new ArrayList<>();
         System.out.println("uploadAttachments called: contractId=" + contractId + ", attachments.length=" + (attachments != null ? attachments.length : 0) + ", s3Enabled=" + s3Enabled + ", s3Service=" + (s3Service != null ? "not null" : "null"));
         
         // Skip upload if S3 is not configured or enabled
         if (!s3Enabled || s3Service == null) {
             // S3 not configured, skip upload but log warning
             System.out.println("S3 is not configured or enabled. Skipping file upload for contract: " + contractId);
-            return fileLinks;
+            return fileInfos;
         }
         
         for (MultipartFile file : attachments) {
@@ -752,9 +797,10 @@ public class SalesMSAContractService {
             
             // Validate file type (PDF only)
             String contentType = file.getContentType();
-            System.out.println("File: " + file.getOriginalFilename() + ", contentType: " + contentType + ", size: " + file.getSize());
+            String originalFileName = file.getOriginalFilename();
+            System.out.println("File: " + originalFileName + ", contentType: " + contentType + ", size: " + file.getSize());
             if (contentType == null || !contentType.equals("application/pdf")) {
-                System.out.println("Skipping non-PDF file: " + file.getOriginalFilename() + " (contentType: " + contentType + ")");
+                System.out.println("Skipping non-PDF file: " + originalFileName + " (contentType: " + contentType + ")");
                 continue; // Skip non-PDF files
             }
             
@@ -762,7 +808,7 @@ public class SalesMSAContractService {
                 // Upload to S3 (returns S3 key)
                 String s3Key = s3Service.uploadFile(file, "contracts/msa/" + contractId);
                 System.out.println("File uploaded successfully. S3 key: " + s3Key);
-                fileLinks.add(s3Key);
+                fileInfos.add(new AttachmentInfo(s3Key, originalFileName));
                 
                 // Save document metadata
                 DocumentMetadata metadata = new DocumentMetadata();
@@ -776,18 +822,18 @@ public class SalesMSAContractService {
                 documentMetadataRepository.save(metadata);
                 System.out.println("DocumentMetadata saved for S3 key: " + s3Key);
             } catch (IOException e) {
-                System.err.println("IOException uploading file: " + file.getOriginalFilename() + " - " + e.getMessage());
-                throw new RuntimeException("Failed to upload file: " + file.getOriginalFilename(), e);
+                System.err.println("IOException uploading file: " + originalFileName + " - " + e.getMessage());
+                throw new RuntimeException("Failed to upload file: " + originalFileName, e);
             } catch (RuntimeException e) {
                 // If S3 upload fails, log error but don't fail the entire contract creation
-                System.err.println("RuntimeException uploading file to S3: " + file.getOriginalFilename() + " - " + e.getMessage());
+                System.err.println("RuntimeException uploading file to S3: " + originalFileName + " - " + e.getMessage());
                 e.printStackTrace();
                 // Continue with other files
             }
         }
         
-        System.out.println("uploadAttachments returning " + fileLinks.size() + " file(s): " + fileLinks);
-        return fileLinks;
+        System.out.println("uploadAttachments returning " + fileInfos.size() + " file(s)");
+        return fileInfos;
     }
     
     /**
@@ -811,33 +857,70 @@ public class SalesMSAContractService {
         }
         
         // Remove from attachments_manifest
-        List<String> attachmentLinks = new ArrayList<>();
         if (contract.getAttachmentsManifest() != null && !contract.getAttachmentsManifest().trim().isEmpty()) {
             try {
-                Type listType = new TypeToken<List<String>>(){}.getType();
-                attachmentLinks = gson.fromJson(contract.getAttachmentsManifest(), listType);
-                if (attachmentLinks == null) {
-                    attachmentLinks = new ArrayList<>();
+                // Try to parse as List<AttachmentInfo> (new format)
+                Type attachmentInfoListType = new TypeToken<List<AttachmentInfo>>(){}.getType();
+                List<AttachmentInfo> attachmentInfos = gson.fromJson(contract.getAttachmentsManifest(), attachmentInfoListType);
+                if (attachmentInfos != null && !attachmentInfos.isEmpty()) {
+                    boolean removed = attachmentInfos.removeIf(info -> s3Key.equals(info.getS3Key()));
+                    if (!removed) {
+                        throw new RuntimeException("Attachment not found in contract");
+                    }
+                    
+                    // Update contract
+                    if (attachmentInfos.isEmpty()) {
+                        contract.setLink(null);
+                        contract.setAttachmentsManifest(null);
+                    } else {
+                        contract.setLink(attachmentInfos.get(0).getS3Key());
+                        contract.setAttachmentsManifest(gson.toJson(attachmentInfos));
+                    }
+                } else {
+                    // Fallback: try to parse as List<String> (old format)
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(contract.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null) {
+                        boolean removed = attachmentLinks.remove(s3Key);
+                        if (!removed) {
+                            throw new RuntimeException("Attachment not found in contract");
+                        }
+                        
+                        // Update contract
+                        if (attachmentLinks.isEmpty()) {
+                            contract.setLink(null);
+                            contract.setAttachmentsManifest(null);
+                        } else {
+                            contract.setLink(attachmentLinks.get(0));
+                            contract.setAttachmentsManifest(gson.toJson(attachmentLinks));
+                        }
+                    }
                 }
             } catch (Exception e) {
-                System.err.println("Error parsing attachments_manifest: " + e.getMessage());
-                attachmentLinks = new ArrayList<>();
+                // If parsing as AttachmentInfo fails, try List<String> (old format)
+                try {
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(contract.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null) {
+                        boolean removed = attachmentLinks.remove(s3Key);
+                        if (!removed) {
+                            throw new RuntimeException("Attachment not found in contract");
+                        }
+                        
+                        // Update contract
+                        if (attachmentLinks.isEmpty()) {
+                            contract.setLink(null);
+                            contract.setAttachmentsManifest(null);
+                        } else {
+                            contract.setLink(attachmentLinks.get(0));
+                            contract.setAttachmentsManifest(gson.toJson(attachmentLinks));
+                        }
+                    }
+                } catch (Exception e2) {
+                    System.err.println("Error parsing attachments_manifest: " + e2.getMessage());
+                    throw new RuntimeException("Failed to parse attachments manifest", e2);
+                }
             }
-        }
-        
-        // Remove the s3Key from list
-        boolean removed = attachmentLinks.remove(s3Key);
-        if (!removed) {
-            throw new RuntimeException("Attachment not found in contract");
-        }
-        
-        // Update contract
-        if (attachmentLinks.isEmpty()) {
-            contract.setLink(null);
-            contract.setAttachmentsManifest(null);
-        } else {
-            contract.setLink(attachmentLinks.get(0)); // Update first file
-            contract.setAttachmentsManifest(gson.toJson(attachmentLinks));
         }
         contractRepository.save(contract);
         contractRepository.flush();
@@ -1191,6 +1274,10 @@ public class SalesMSAContractService {
                 dto.setEngineerLevel(e.getEngineerLevel());
                 dto.setStartDate(e.getStartDate() != null ? e.getStartDate().toString() : null);
                 dto.setEndDate(e.getEndDate() != null ? e.getEndDate().toString() : null);
+                dto.setBillingType(e.getBillingType() != null ? e.getBillingType() : "Monthly");
+                dto.setHourlyRate(e.getHourlyRate() != null ? e.getHourlyRate().doubleValue() : null);
+                dto.setHours(e.getHours() != null ? e.getHours().doubleValue() : null);
+                dto.setSubtotal(e.getSubtotal() != null ? e.getSubtotal().doubleValue() : null);
                 dto.setRating(e.getRating() != null ? e.getRating().doubleValue() : null);
                 dto.setSalary(e.getSalary() != null ? e.getSalary().doubleValue() : null);
                 return dto;

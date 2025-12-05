@@ -94,9 +94,9 @@ public class ChangeRequestService {
             // - If contract has no parent_version_id, use contract's id (V1)
             // - If contract has parent_version_id, use parent_version_id to reference V1
             if (sowContract != null) {
-                Integer sowContractIdForCR = sowContract.getParentVersionId() != null
-                        ? sowContract.getParentVersionId()
-                        : sowContract.getId();
+                Integer sowContractIdForCR = sowContract.getParentVersionId() != null 
+                    ? sowContract.getParentVersionId() 
+                    : sowContract.getId();
                 changeRequest.setSowContractId(sowContractIdForCR);
             } else {
                 changeRequest.setSowContractId(contractId);
