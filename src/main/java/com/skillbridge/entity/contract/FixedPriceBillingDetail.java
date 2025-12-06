@@ -41,6 +41,9 @@ public class FixedPriceBillingDetail {
     @Column(name = "change_request_id")
     private Integer changeRequestId;
 
+    @Column(name = "is_paid", nullable = false)
+    private Boolean isPaid = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -133,6 +136,14 @@ public class FixedPriceBillingDetail {
 
     public void setChangeRequestId(Integer changeRequestId) {
         this.changeRequestId = changeRequestId;
+    }
+
+    public Boolean getIsPaid() {
+        return isPaid;
+    }
+
+    public void setIsPaid(Boolean isPaid) {
+        this.isPaid = isPaid;
     }
 
     public LocalDateTime getCreatedAt() {

@@ -338,5 +338,100 @@ public class EmailService {
             throw new RuntimeException("Failed to send meeting invitation email", e);
         }
     }
+
+    /**
+     * Send password reset email to user
+     * @param user User entity
+     * @param resetLink Password reset link with token
+     * @param expirationMinutes Token expiration time in minutes
+     */
+    public void sendPasswordResetEmail(User user, String resetLink, int expirationMinutes) {
+        try {
+            String userName = user.getFullName() != null ? user.getFullName() : "User";
+
+            // Try to get email template
+            String subject = "Password Reset Request";
+            String body = "Hello " + userName + ",\n\n" +
+                    "You requested a password reset. Please click the link below to reset your password:\n\n" +
+                    resetLink + "\n\n" +
+                    "This link will expire in " + expirationMinutes + " minutes.\n\n" +
+                    "If you did not request this, please ignore this email.\n\n" +
+                    "Best regards,\nSkillBridge Team";
+
+            if (emailTemplateRepository != null) {
+                try {
+                    EmailTemplate template = emailTemplateRepository
+                            .findByTemplateName("password_reset")
+                            .orElse(null);
+                    
+                    if (template != null) {
+                        subject = template.getSubject();
+                        body = template.getBody()
+                                .replace("{name}", userName)
+                                .replace("{reset_link}", resetLink)
+                                .replace("{expiration_minutes}", String.valueOf(expirationMinutes));
+                    }
+                } catch (Exception e) {
+                    System.err.println("Failed to load email template, using default: " + e.getMessage());
+                }
+            }
+
+            // Send email if JavaMailSender is configured
+            if (javaMailSender != null) {
+                try {
+                    SimpleMailMessage message = new SimpleMailMessage();
+                    // Validate and format from email properly
+                    String fromEmailAddress = smtpFromEmail;
+                    if (fromEmailAddress == null || fromEmailAddress.trim().isEmpty()) {
+                        fromEmailAddress = "noreply@skillbridge.com";
+                    } else if (!fromEmailAddress.contains("@")) {
+                        // If from email doesn't have @, use a default format
+                        fromEmailAddress = fromEmailAddress + "@skillbridge.com";
+                    }
+                    // Validate email format
+                    if (!fromEmailAddress.matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
+                        System.err.println("Invalid from email format: " + fromEmailAddress);
+                        fromEmailAddress = "noreply@skillbridge.com";
+                    }
+                    message.setFrom(fromEmailAddress);
+                    message.setTo(user.getEmail());
+                    message.setSubject(subject);
+                    message.setText(body);
+                    javaMailSender.send(message);
+                    System.out.println("Password reset email sent successfully to: " + user.getEmail());
+                    System.out.println("From: " + fromEmailAddress);
+                } catch (Exception e) {
+                    // Log detailed error information
+                    System.err.println("=== ERROR: Failed to send password reset email ===");
+                    System.err.println("To: " + user.getEmail());
+                    System.err.println("From: " + smtpFromEmail);
+                    System.err.println("Error: " + e.getClass().getSimpleName());
+                    System.err.println("Message: " + e.getMessage());
+                    if (e.getCause() != null) {
+                        System.err.println("Cause: " + e.getCause().getMessage());
+                    }
+                    e.printStackTrace();
+                    System.err.println("================================================");
+                    // Don't throw exception - just log and continue
+                    // This ensures password reset request is not blocked by email sending failure
+                }
+            } else {
+                System.out.println("JavaMailSender is not configured. Email will not be sent.");
+            }
+
+            // Log email content (for development/testing)
+            System.out.println("=== Password Reset Email ===");
+            System.out.println("To: " + user.getEmail());
+            System.out.println("Subject: " + subject);
+            System.out.println("Body:\n" + body);
+            System.out.println("Reset Link: " + resetLink);
+            System.out.println("================================================");
+
+        } catch (Exception e) {
+            // Log error but don't fail the password reset request
+            System.err.println("Failed to prepare password reset email: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
 }
 

@@ -1,5 +1,7 @@
 package com.skillbridge.dto.sales.request;
 
+import jakarta.validation.constraints.Size;
+
 /**
  * Request DTO for creating MSA contract
  */
@@ -10,6 +12,7 @@ public class CreateMSARequest {
     private String effectiveEnd; // Format: YYYY-MM-DD
     private String status;
     private Integer assigneeUserId;
+    @Size(max = 500, message = "Note must not exceed 500 characters")
     private String note;
     private String currency;
     private String paymentTerms;

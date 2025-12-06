@@ -1,5 +1,6 @@
 package com.skillbridge.dto.contact.request;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -17,10 +18,11 @@ public class ContactFormData {
 
     @NotBlank(message = "Company name is required")
     @Size(min = 2, max = 100, message = "Company name must be between 2 and 100 characters")
+    @JsonAlias({"company", "companyName"})
     private String companyName;
 
     @NotBlank(message = "Phone is required")
-    @Pattern(regexp = "^[\\d\\-\\+\\(\\)\\s]+$", message = "Phone number format is invalid")
+    @Pattern(regexp = "^(?=.*\\d)[\\d\\-\\+\\(\\)\\s]{10,20}$", message = "Phone number format is invalid. Must contain at least one digit and be between 10-20 characters. Only digits, hyphens, plus signs, parentheses, and spaces are allowed")
     private String phone;
 
     @NotBlank(message = "Email is required")
@@ -29,6 +31,7 @@ public class ContactFormData {
 
     @NotBlank(message = "Title is required")
     @Size(min = 2, max = 255, message = "Title must be between 2 and 255 characters")
+    @JsonAlias({"subject", "title"})
     private String title;
 
     @NotBlank(message = "Message is required")
