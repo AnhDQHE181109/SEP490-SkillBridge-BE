@@ -1,5 +1,9 @@
 package com.skillbridge.dto.contact.response;
 
+import java.util.List;
+
+import com.skillbridge.dto.sales.response.SalesChangeRequestDetailDTO.AttachmentDTO;
+
 /**
  * Contact Proposal DTO
  * Data transfer object for proposal information in contact detail
@@ -14,6 +18,7 @@ public class ContactProposalDTO {
     private String createdAt; // Format: YYYY/MM/DD HH:MM
     private Boolean isCurrent;
     private String clientFeedback; // Client feedback/comment for this proposal
+    private List<AttachmentDTO> attachments; // List of attachments with s3Key and fileName
 
     // Constructors
     public ContactProposalDTO() {
@@ -90,6 +95,14 @@ public class ContactProposalDTO {
 
     public void setClientFeedback(String clientFeedback) {
         this.clientFeedback = clientFeedback;
+    }
+
+    public List<AttachmentDTO> getAttachments() {
+        return attachments;
+    }
+
+    public void setAttachments(List<AttachmentDTO> attachments) {
+        this.attachments = attachments;
     }
 }
 

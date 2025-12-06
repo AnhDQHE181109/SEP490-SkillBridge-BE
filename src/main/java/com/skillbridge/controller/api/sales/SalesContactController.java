@@ -12,6 +12,7 @@ import com.skillbridge.service.sales.SalesContactDetailService;
 import com.skillbridge.service.sales.SalesContactService;
 import com.skillbridge.util.JwtTokenProvider;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -237,7 +238,7 @@ public class SalesContactController {
     @PostMapping("/{id}/communication-logs")
     public ResponseEntity<?> addCommunicationLog(
             @PathVariable Integer id,
-            @RequestBody CreateCommunicationLogRequest request,
+            @Valid @RequestBody CreateCommunicationLogRequest request,
             Authentication authentication,
             HttpServletRequest httpRequest
     ) {

@@ -23,6 +23,7 @@ public class UpdateUserRequest {
     // @Email and @NotBlank annotations are not needed for email
 
     @Size(max = 50, message = "Phone number must not exceed 50 characters")
+    @Pattern(regexp = "^[0-9-]*$", message = "Phone number can only contain numbers and dashes")
     private String phone;
 
     // Constructors

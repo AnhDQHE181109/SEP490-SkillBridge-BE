@@ -19,7 +19,7 @@ public class CommunicationLog {
     @Column(name = "contact_id", nullable = false)
     private Integer contactId;
 
-    @Column(name = "message", columnDefinition = "TEXT", nullable = false)
+    @Column(name = "message", length = 500, nullable = false)
     private String message;
 
     @Column(name = "created_by", nullable = false)

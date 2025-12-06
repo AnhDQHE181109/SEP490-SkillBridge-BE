@@ -17,7 +17,7 @@ public class ProposalDTO {
     private String reviewAction; // APPROVE, REQUEST_REVISION, REJECT
     private LocalDateTime reviewSubmittedAt;
     private String link; // S3 link to PDF (first file)
-    private List<String> attachments; // List of file links from attachments_manifest
+    private List<AttachmentDTO> attachments; // List of attachments with s3Key and fileName
     private Integer createdBy;
     private String createdByName;
     private LocalDateTime createdAt;
@@ -109,11 +109,11 @@ public class ProposalDTO {
         this.link = link;
     }
 
-    public List<String> getAttachments() {
+    public List<AttachmentDTO> getAttachments() {
         return attachments;
     }
 
-    public void setAttachments(List<String> attachments) {
+    public void setAttachments(List<AttachmentDTO> attachments) {
         this.attachments = attachments;
     }
 

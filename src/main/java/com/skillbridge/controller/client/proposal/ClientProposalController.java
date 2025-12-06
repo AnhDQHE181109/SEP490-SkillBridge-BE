@@ -1,9 +1,14 @@
 package com.skillbridge.controller.client.proposal;
 
 import com.skillbridge.dto.proposal.response.ProposalListResponse;
+import com.skillbridge.entity.auth.User;
+import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.service.proposal.ProposalListService;
+import com.skillbridge.util.JwtTokenProvider;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -18,6 +23,12 @@ public class ClientProposalController {
     @Autowired
     private ProposalListService proposalListService;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private JwtTokenProvider jwtTokenProvider;
+
     /**
      * Get proposals for authenticated client
      * GET /api/client/proposals
@@ -27,30 +38,26 @@ public class ClientProposalController {
      * - status: Status filter (optional, "All" or specific status)
      * - page: Page number (default: 0)
      * - size: Page size (default: 20)
-     * 
-     * Note: Authentication is handled by SecurityConfig
-     * The clientUserId should be extracted from JWT token or session
-     * For now, we'll use a header or request parameter (should be replaced with JWT extraction)
      */
     @GetMapping
-    public ResponseEntity<ProposalListResponse> getProposals(
+    public ResponseEntity<?> getProposals(
         @RequestParam(required = false) String search,
         @RequestParam(required = false) String status,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        Authentication authentication,
+        HttpServletRequest request
     ) {
-        try {
-            // TODO: Extract userId from JWT token when JWT authentication is fully implemented
-            // For now, using header (in production, extract from authentication token)
-            
-            if (userId == null) {
-                // Temporary: For testing, use a default user ID
-                // This should be replaced with JWT token extraction
-                userId = 1; // Remove this after JWT implementation
-            }
+        User currentUser = getCurrentUser(authentication, request);
+        
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-            ProposalListResponse response = proposalListService.getProposalsForClient(
+        Integer userId = currentUser.getId();
+        
+        try {
+            ProposalListResponse response = proposalListService.getProposalsList(
                 userId,
                 search,
                 status,
@@ -66,13 +73,57 @@ public class ClientProposalController {
             
             // Return empty response instead of error to prevent frontend crash
             ProposalListResponse emptyResponse = new ProposalListResponse();
-            emptyResponse.setProposals(java.util.Collections.emptyList());
+            emptyResponse.setProposalsList(java.util.Collections.emptyList());
             emptyResponse.setCurrentPage(0);
             emptyResponse.setTotalPages(0);
-            emptyResponse.setTotalElements(0);
+            emptyResponse.setTotalItems((long)0);
             
             return ResponseEntity.ok(emptyResponse);
         }
+    }
+
+    /**
+     * Get current user from authentication or JWT token
+     */
+    private User getCurrentUser(Authentication authentication, HttpServletRequest request) {
+        // Try to get user from authentication (works with JWT filter)
+        // JWT filter sets principal as String (email), not UserDetails
+        if (authentication != null && authentication.isAuthenticated() && authentication.getPrincipal() != null) {
+            try {
+                String principal = authentication.getPrincipal().toString();
+                
+                // If principal is email, find user by email
+                if (principal.contains("@")) {
+                    return userRepository.findByEmail(principal).orElse(null);
+                }
+                
+                // Otherwise, try to parse as user ID
+                try {
+                    Integer userId = Integer.parseInt(principal);
+                    return userRepository.findById(userId).orElse(null);
+                } catch (NumberFormatException e) {
+                    // If not a number, try to find by email
+                    return userRepository.findByEmail(principal).orElse(null);
+                }
+            } catch (Exception e) {
+                // Continue to try token
+            }
+        }
+
+        // Fallback: Try to get user from JWT token in Authorization header
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            try {
+                String token = authHeader.substring(7);
+                String email = jwtTokenProvider.getEmailFromToken(token);
+                return userRepository.findByEmail(email).orElse(null);
+            } catch (Exception e) {
+                // Token invalid or expired
+                return null;
+            }
+        }
+
+        return null;
     }
 }
 

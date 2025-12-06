@@ -28,8 +28,11 @@ import java.lang.reflect.Type;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import com.skillbridge.dto.common.AttachmentInfo;
 
 /**
  * Proposal Service
@@ -138,10 +141,10 @@ public class ProposalService {
 
         // Upload files and save metadata
         if (files != null && files.length > 0) {
-            List<String> fileLinks = uploadFiles(files, opportunity.getId(), proposal.getId(), currentUser.getId());
-            if (!fileLinks.isEmpty()) {
-                proposal.setLink(fileLinks.get(0)); // Store first file S3 key
-                proposal.setAttachmentsManifest(gson.toJson(fileLinks));
+            List<AttachmentInfo> fileInfos = uploadFiles(files, opportunity.getId(), proposal.getId(), currentUser.getId());
+            if (!fileInfos.isEmpty()) {
+                proposal.setLink(fileInfos.get(0).getS3Key()); // Store first file S3 key
+                proposal.setAttachmentsManifest(gson.toJson(fileInfos));
                 proposal = proposalRepository.save(proposal); // Update with file links
             }
         }
@@ -209,16 +212,16 @@ public class ProposalService {
 
         // Update files
         if (files != null && files.length > 0) {
-            List<String> fileLinks = uploadFiles(files, opportunity.getId(), proposal.getId(), currentUser.getId());
-            if (!fileLinks.isEmpty()) {
-                proposal.setLink(fileLinks.get(0));
-                proposal.setAttachmentsManifest(gson.toJson(fileLinks));
+            List<AttachmentInfo> fileInfos = uploadFiles(files, opportunity.getId(), proposal.getId(), currentUser.getId());
+            if (!fileInfos.isEmpty()) {
+                AttachmentInfo firstFile = fileInfos.get(0);
+                proposal.setLink(firstFile.getS3Key());
+                proposal.setAttachmentsManifest(gson.toJson(fileInfos));
 
                 // Create history entry for file upload
-                String fileName = fileLinks.get(0).substring(fileLinks.get(0).lastIndexOf('/') + 1);
                 createHistoryEntry(opportunity.getId(), proposal.getId(), "UPLOADED",
                         "Proposal Draft v" + proposal.getVersion() + " uploaded by " + currentUser.getFullName(),
-                        fileName, fileLinks.get(0), currentUser.getId());
+                    firstFile.getFileName(), firstFile.getS3Key(), currentUser.getId());
             }
         }
 
@@ -324,8 +327,8 @@ public class ProposalService {
      * @param ownerId Owner user ID
      * @return List of S3 keys or local file paths
      */
-    private List<String> uploadFiles(MultipartFile[] files, Integer opportunityId, Integer proposalId, Integer ownerId) {
-        List<String> fileLinks = new ArrayList<>();
+    private List<AttachmentInfo> uploadFiles(MultipartFile[] files, Integer opportunityId, Integer proposalId, Integer ownerId) {
+        List<AttachmentInfo> fileInfos = new ArrayList<>();
 
         for (MultipartFile file : files) {
             if (file.isEmpty()) {
@@ -339,11 +342,11 @@ public class ProposalService {
             }
 
             try {
-                String fileLink;
+                String originalFileName = file.getOriginalFilename();
+                String s3Key;
                 if (s3Enabled && s3Service != null) {
                     // Upload to S3 (returns S3 key)
-                    String s3Key = s3Service.uploadFile(file, "proposals");
-                    fileLink = s3Key;
+                    s3Key = s3Service.uploadFile(file, "proposals");
 
                     // Save document metadata
                     DocumentMetadata metadata = new DocumentMetadata();
@@ -357,15 +360,15 @@ public class ProposalService {
                     documentMetadataRepository.save(metadata);
                 } else {
                     // Fallback to local file system
-                    fileLink = saveFileLocally(file, opportunityId);
+                    s3Key = saveFileLocally(file, opportunityId);
                 }
-                fileLinks.add(fileLink);
+                fileInfos.add(new AttachmentInfo(s3Key, originalFileName));
             } catch (IOException e) {
                 throw new RuntimeException("Failed to upload file: " + file.getOriginalFilename(), e);
             }
         }
 
-        return fileLinks;
+        return fileInfos;
     }
 
     /**
@@ -467,25 +470,64 @@ public class ProposalService {
         dto.setUpdatedAt(proposal.getUpdatedAt());
 
         // Parse attachments_manifest JSON
+        List<ProposalDTO.AttachmentDTO> attachments = new ArrayList<>();
         if (proposal.getAttachmentsManifest() != null && !proposal.getAttachmentsManifest().isEmpty()) {
             try {
-                Type listType = new TypeToken<List<String>>(){}.getType();
-                List<String> attachments = gson.fromJson(proposal.getAttachmentsManifest(), listType);
-                dto.setAttachments(attachments);
-            } catch (Exception e) {
-                // If parsing fails, use link as single attachment
-                List<String> attachments = new ArrayList<>();
-                if (proposal.getLink() != null) {
-                    attachments.add(proposal.getLink());
+                // Try to parse as List<AttachmentInfo> (new format with fileName)
+                Type attachmentInfoListType = new TypeToken<List<AttachmentInfo>>(){}.getType();
+                List<AttachmentInfo> attachmentInfos = gson.fromJson(proposal.getAttachmentsManifest(), attachmentInfoListType);
+                if (attachmentInfos != null && !attachmentInfos.isEmpty()) {
+                    for (AttachmentInfo info : attachmentInfos) {
+                        attachments.add(new ProposalDTO.AttachmentDTO(info.getS3Key(), info.getFileName(), null));
+                    }
+                } else {
+                    // Fallback: try to parse as List<String> (old format)
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(proposal.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null) {
+                        for (String s3Key : attachmentLinks) {
+                            String fileName = s3Key;
+                            if (fileName.contains("/")) {
+                                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                            }
+                            attachments.add(new ProposalDTO.AttachmentDTO(s3Key, fileName, null));
+                        }
+                    }
                 }
-                dto.setAttachments(attachments);
+            } catch (Exception e) {
+                // If parsing fails, try to parse as List<String> (old format)
+                try {
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(proposal.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null) {
+                        for (String s3Key : attachmentLinks) {
+                            String fileName = s3Key;
+                            if (fileName.contains("/")) {
+                                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                            }
+                            attachments.add(new ProposalDTO.AttachmentDTO(s3Key, fileName, null));
+                        }
+                    }
+                } catch (Exception e2) {
+                    // If both fail, use link as single attachment
+                if (proposal.getLink() != null) {
+                        String fileName = proposal.getLink();
+                        if (fileName.contains("/")) {
+                            fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                        }
+                        attachments.add(new ProposalDTO.AttachmentDTO(proposal.getLink(), fileName, null));
+                }
+                }
             }
         } else if (proposal.getLink() != null) {
             // If no manifest but has link, use link as single attachment
-            List<String> attachments = new ArrayList<>();
-            attachments.add(proposal.getLink());
-            dto.setAttachments(attachments);
+            String fileName = proposal.getLink();
+            if (fileName.contains("/")) {
+                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+            }
+            attachments.add(new ProposalDTO.AttachmentDTO(proposal.getLink(), fileName, null));
         }
+            dto.setAttachments(attachments);
 
         // Load reviewer name
         if (proposal.getReviewerId() != null) {

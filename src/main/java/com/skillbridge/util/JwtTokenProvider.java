@@ -129,5 +129,23 @@ public class JwtTokenProvider {
     public String getEmailFromToken(String token) {
         return getUsernameFromToken(token);
     }
+    
+    /**
+     * Extract user ID from token
+     */
+    public Integer getUserIdFromToken(String token) {
+        try {
+            Claims claims = getAllClaimsFromToken(token);
+            Object userIdObj = claims.get("userId");
+            if (userIdObj instanceof Integer) {
+                return (Integer) userIdObj;
+            } else if (userIdObj instanceof Number) {
+                return ((Number) userIdObj).intValue();
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
 }
 

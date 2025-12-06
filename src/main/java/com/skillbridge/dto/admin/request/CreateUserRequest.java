@@ -25,6 +25,7 @@ public class CreateUserRequest {
     private String email;
 
     @Size(max = 50, message = "Phone number must not exceed 50 characters")
+    @Pattern(regexp = "^[0-9-]*$", message = "Phone number can only contain numbers and dashes")
     private String phone;
 
     // Constructors
