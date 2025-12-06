@@ -57,7 +57,7 @@ public class ClientProposalController {
         Integer userId = currentUser.getId();
         
         try {
-            ProposalListResponse response = proposalListService.getProposalsForClient(
+            ProposalListResponse response = proposalListService.getProposalsList(
                 userId,
                 search,
                 status,
@@ -73,10 +73,10 @@ public class ClientProposalController {
             
             // Return empty response instead of error to prevent frontend crash
             ProposalListResponse emptyResponse = new ProposalListResponse();
-            emptyResponse.setProposals(java.util.Collections.emptyList());
+            emptyResponse.setProposalsList(java.util.Collections.emptyList());
             emptyResponse.setCurrentPage(0);
             emptyResponse.setTotalPages(0);
-            emptyResponse.setTotalElements(0);
+            emptyResponse.setTotalItems((long)0);
             
             return ResponseEntity.ok(emptyResponse);
         }
