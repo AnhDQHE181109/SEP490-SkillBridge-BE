@@ -10,6 +10,7 @@ import com.skillbridge.repository.auth.PasswordResetTokenRepository;
 import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.repository.common.EmailTemplateRepository;
 import com.skillbridge.service.auth.PasswordService;
+import com.skillbridge.service.common.EmailService;
 import com.skillbridge.util.JwtTokenProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,6 +42,9 @@ public class AuthService {
 
     @Autowired
     private EmailTemplateRepository emailTemplateRepository;
+
+    @Autowired
+    private EmailService emailService;
 
     @Value("${password.reset.token.expiration:3600}") // 1 hour in seconds
     private int tokenExpirationSeconds;
@@ -113,58 +117,97 @@ public class AuthService {
             resetToken.setUsed(false);
             passwordResetTokenRepository.save(resetToken);
 
-            // Prepare reset link
+            // Prepare reset link based on user role
+            String resetLinkPath;
+            String userRole = user.getRole() != null ? user.getRole().toUpperCase() : "CLIENT";
+            
+            if ("SALES_MANAGER".equals(userRole) || "SALES_REP".equals(userRole)) {
+                resetLinkPath = "/sales/reset-password";
+            } else if ("ADMIN".equals(userRole)) {
+                resetLinkPath = "/admin/reset-password";
+            } else {
+                resetLinkPath = "/client/reset-password";
+            }
+            
             String resetLink = String.format(
-                    "%s/client/reset-password?token=%s",
+                    "%s%s?token=%s",
                     baseUrl,
+                    resetLinkPath,
                     token
             );
 
-            // Send password reset email (commented until SES configured)
-            sendPasswordResetEmail(user, resetLink);
+            // Send password reset email using EmailService
+            int expirationMinutes = tokenExpirationSeconds / 60;
+            emailService.sendPasswordResetEmail(user, resetLink, expirationMinutes);
         }
 
         // Always return success for security (don't reveal if email exists)
     }
 
     /**
-     * Send password reset email
+     * Change password for authenticated user
+     * @param userId User ID
+     * @param currentPassword Current password
+     * @param newPassword New password
+     * @throws RuntimeException if user not found, current password incorrect, or new password invalid
      */
-    private void sendPasswordResetEmail(User user, String resetLink) {
-        try {
-            EmailTemplate template = emailTemplateRepository
-                    .findByTemplateName("password_reset")
-                    .orElse(null);
+    @Transactional
+    public void changePassword(Integer userId, String currentPassword, String newPassword) {
+        // Find user by ID
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-            String subject = "Password Reset Request";
-            String body = "Hello " + (user.getFullName() != null ? user.getFullName() : "") + ",\n\n" +
-                    "You requested a password reset. Please click the link below to reset your password:\n\n" +
-                    resetLink + "\n\n" +
-                    "This link will expire in " + (tokenExpirationSeconds / 60) + " minutes.\n\n" +
-                    "If you did not request this, please ignore this email.\n\n" +
-                    "Best regards,\nSkillBridge Team";
-
-            if (template != null) {
-                subject = template.getSubject();
-                body = template.getBody()
-                        .replace("{name}", user.getFullName() != null ? user.getFullName() : "")
-                        .replace("{reset_link}", resetLink)
-                        .replace("{expiration_minutes}", String.valueOf(tokenExpirationSeconds / 60));
-            }
-
-            // Log email content (for development/testing)
-            System.out.println("=== Password Reset Email Content Prepared (SES not enabled) ===");
-            System.out.println("To: " + user.getEmail());
-            System.out.println("Subject: " + subject);
-            System.out.println("Body: " + body);
-            System.out.println("Reset Link: " + resetLink);
-            System.out.println("==============================================================");
-
-        } catch (Exception e) {
-            // Log error but don't fail the request (security: don't reveal if email exists)
-            System.err.println("Failed to prepare password reset email: " + e.getMessage());
-            e.printStackTrace();
+        // Check if account is active
+        if (!user.getIsActive()) {
+            throw new RuntimeException("Your account is inactive. Please contact support");
         }
+
+        // Verify current password
+        if (!passwordService.verifyPassword(currentPassword, user.getPassword())) {
+            throw new RuntimeException("Current password is incorrect");
+        }
+
+        // Validate new password (same as current password check - should be different)
+        if (passwordService.verifyPassword(newPassword, user.getPassword())) {
+            throw new RuntimeException("New password must be different from current password");
+        }
+
+        // Hash new password and update
+        String hashedNewPassword = passwordService.hashPassword(newPassword);
+        user.setPassword(hashedNewPassword);
+        userRepository.save(user);
+    }
+
+    /**
+     * Reset password using token
+     * @param token Reset token
+     * @param newPassword New password
+     * @throws RuntimeException if token invalid, expired, or user not found
+     */
+    @Transactional
+    public void resetPassword(String token, String newPassword) {
+        // Find valid token
+        LocalDateTime now = LocalDateTime.now();
+        PasswordResetToken resetToken = passwordResetTokenRepository.findValidToken(token, now)
+                .orElseThrow(() -> new RuntimeException("Invalid or expired reset token"));
+
+        // Find user by user ID from token
+        User user = userRepository.findById(resetToken.getUserId())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Check if account is active
+        if (!user.getIsActive()) {
+            throw new RuntimeException("Your account is inactive. Please contact support");
+        }
+
+        // Hash new password and update
+        String hashedNewPassword = passwordService.hashPassword(newPassword);
+        user.setPassword(hashedNewPassword);
+        userRepository.save(user);
+
+        // Mark token as used
+        resetToken.setUsed(true);
+        passwordResetTokenRepository.save(resetToken);
     }
 
     /**
