@@ -101,7 +101,7 @@ public class Proposal {
     }
 
     // Getters and Setters
-    public Integer getId() {
+    public Integer getID() {
         return id;
     }
 
@@ -133,7 +133,7 @@ public class Proposal {
         this.reviewerId = reviewerId;
     }
 
-    public Integer getContactId() {
+    public Integer getContactID() {
         return contactId;
     }
 
