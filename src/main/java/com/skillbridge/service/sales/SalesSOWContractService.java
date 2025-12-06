@@ -4,12 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.skillbridge.dto.sales.request.CreateSOWRequest;
 import com.skillbridge.dto.sales.request.CreateChangeRequestRequest;
-import com.skillbridge.dto.sales.response.SOWContractDTO;
-import com.skillbridge.dto.sales.response.SOWContractDetailDTO;
-import com.skillbridge.dto.sales.response.ChangeRequestListItemDTO;
-import com.skillbridge.dto.sales.response.ChangeRequestsListResponseDTO;
-import com.skillbridge.dto.sales.response.ChangeRequestResponseDTO;
-import com.skillbridge.dto.sales.response.SalesChangeRequestDetailDTO;
+import com.skillbridge.dto.sales.response.*;
 import com.skillbridge.entity.auth.User;
 import com.skillbridge.entity.contract.*;
 import com.skillbridge.repository.auth.UserRepository;
@@ -726,11 +721,11 @@ public class SalesSOWContractService {
             
             if (!baselineEngineers.isEmpty()) {
                 // Event-based: Calculate current engineers from baseline + events
-                List<CREventService.CurrentEngineerState> currentEngineerStates = 
+                List<CurrentEngineerState> currentEngineerStates = 
                     crEventService.calculateCurrentResources(contractId, currentDate);
                 
                 // Convert to DTOs
-                for (CREventService.CurrentEngineerState state : currentEngineerStates) {
+                for (CurrentEngineerState state : currentEngineerStates) {
                     SOWContractDetailDTO.EngagedEngineerDTO dto = new SOWContractDetailDTO.EngagedEngineerDTO();
                     dto.setId(state.getEngineerId());
                     dto.setEngineerLevel(state.getLevel() + " " + state.getRole()); // Combine level and role
@@ -1683,9 +1678,9 @@ public class SalesSOWContractService {
         
         // Get engaged engineers, billing details, attachments, history (same as MSA)
         List<ChangeRequestEngagedEngineer> engineers = changeRequestEngagedEngineerRepository.findByChangeRequestId(changeRequestId);
-        List<SalesChangeRequestDetailDTO.EngagedEngineerDTO> engineerDTOs = engineers.stream()
+        List<EngagedEngineerDTO> engineerDTOs = engineers.stream()
             .map(e -> {
-                SalesChangeRequestDetailDTO.EngagedEngineerDTO dto = new SalesChangeRequestDetailDTO.EngagedEngineerDTO();
+                EngagedEngineerDTO dto = new EngagedEngineerDTO();
                 dto.setId(e.getId());
                 dto.setEngineerLevel(e.getEngineerLevel());
                 dto.setStartDate(e.getStartDate() != null ? e.getStartDate().toString() : null);
@@ -1701,9 +1696,9 @@ public class SalesSOWContractService {
             .collect(java.util.stream.Collectors.toList());
         
         List<ChangeRequestBillingDetail> billingDetails = changeRequestBillingDetailRepository.findByChangeRequestId(changeRequestId);
-        List<SalesChangeRequestDetailDTO.BillingDetailDTO> billingDTOs = billingDetails.stream()
+        List<BillingDetailDTO> billingDTOs = billingDetails.stream()
             .map(b -> {
-                SalesChangeRequestDetailDTO.BillingDetailDTO dto = new SalesChangeRequestDetailDTO.BillingDetailDTO();
+                BillingDetailDTO dto = new BillingDetailDTO();
                 dto.setId(b.getId());
                 dto.setPaymentDate(b.getPaymentDate() != null ? b.getPaymentDate().toString() : null);
                 dto.setDeliveryNote(b.getDeliveryNote());
@@ -1725,9 +1720,9 @@ public class SalesSOWContractService {
             .collect(java.util.stream.Collectors.toList());
         
         List<ChangeRequestHistory> history = changeRequestHistoryRepository.findByChangeRequestIdOrderByTimestampDesc(changeRequestId);
-        List<SalesChangeRequestDetailDTO.HistoryItemDTO> historyDTOs = history.stream()
+        List<HistoryItemDTO> historyDTOs = history.stream()
             .map(h -> {
-                SalesChangeRequestDetailDTO.HistoryItemDTO dto = new SalesChangeRequestDetailDTO.HistoryItemDTO();
+                HistoryItemDTO dto = new HistoryItemDTO();
                 dto.setId(h.getId());
                 dto.setDate(h.getTimestamp() != null ? h.getTimestamp().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "");
                 String description = h.getAction();
@@ -2774,7 +2769,7 @@ public class SalesSOWContractService {
         sowBaselineService.createBaseline(sowContractId);
         
         // 3. Call CREventService.calculateCurrentResources(sowContractId, asOfDate)
-        List<CREventService.CurrentEngineerState> currentEngineerStates = 
+        List<CurrentEngineerState> currentEngineerStates = 
             crEventService.calculateCurrentResources(sowContractId, asOfDate);
         
         // 4. Convert to DTO format
@@ -2787,7 +2782,7 @@ public class SalesSOWContractService {
             engineerIdToBaseIdMap.put(base.getId(), base.getId());
         }
         
-        for (CREventService.CurrentEngineerState state : currentEngineerStates) {
+        for (CurrentEngineerState state : currentEngineerStates) {
             com.skillbridge.dto.sales.response.CurrentResourcesDTO.ResourceDTO dto = 
                 new com.skillbridge.dto.sales.response.CurrentResourcesDTO.ResourceDTO();
             

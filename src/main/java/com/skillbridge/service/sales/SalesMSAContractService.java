@@ -4,10 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.skillbridge.dto.sales.request.CreateMSARequest;
 import com.skillbridge.dto.sales.request.CreateChangeRequestRequest;
-import com.skillbridge.dto.sales.response.MSAContractDTO;
-import com.skillbridge.dto.sales.response.MSAContractDetailDTO;
-import com.skillbridge.dto.sales.response.ChangeRequestResponseDTO;
-import com.skillbridge.dto.sales.response.SalesChangeRequestDetailDTO;
+import com.skillbridge.dto.sales.response.*;
 import com.skillbridge.entity.auth.User;
 import com.skillbridge.entity.contract.Contract;
 import com.skillbridge.entity.contract.ContractHistory;
@@ -1267,9 +1264,9 @@ public class SalesMSAContractService {
         
         // Get engaged engineers
         List<ChangeRequestEngagedEngineer> engineers = changeRequestEngagedEngineerRepository.findByChangeRequestId(changeRequestId);
-        List<SalesChangeRequestDetailDTO.EngagedEngineerDTO> engineerDTOs = engineers.stream()
+        List<EngagedEngineerDTO> engineerDTOs = engineers.stream()
             .map(e -> {
-                SalesChangeRequestDetailDTO.EngagedEngineerDTO dto = new SalesChangeRequestDetailDTO.EngagedEngineerDTO();
+                EngagedEngineerDTO dto = new EngagedEngineerDTO();
                 dto.setId(e.getId());
                 dto.setEngineerLevel(e.getEngineerLevel());
                 dto.setStartDate(e.getStartDate() != null ? e.getStartDate().toString() : null);
@@ -1286,9 +1283,9 @@ public class SalesMSAContractService {
         
         // Get billing details
         List<ChangeRequestBillingDetail> billingDetails = changeRequestBillingDetailRepository.findByChangeRequestId(changeRequestId);
-        List<SalesChangeRequestDetailDTO.BillingDetailDTO> billingDTOs = billingDetails.stream()
+        List<BillingDetailDTO> billingDTOs = billingDetails.stream()
             .map(b -> {
-                SalesChangeRequestDetailDTO.BillingDetailDTO dto = new SalesChangeRequestDetailDTO.BillingDetailDTO();
+                BillingDetailDTO dto = new BillingDetailDTO();
                 dto.setId(b.getId());
                 dto.setPaymentDate(b.getPaymentDate() != null ? b.getPaymentDate().toString() : null);
                 dto.setDeliveryNote(b.getDeliveryNote());
@@ -1312,9 +1309,9 @@ public class SalesMSAContractService {
         
         // Get history
         List<ChangeRequestHistory> history = changeRequestHistoryRepository.findByChangeRequestIdOrderByTimestampDesc(changeRequestId);
-        List<SalesChangeRequestDetailDTO.HistoryItemDTO> historyDTOs = history.stream()
+        List<HistoryItemDTO> historyDTOs = history.stream()
             .map(h -> {
-                SalesChangeRequestDetailDTO.HistoryItemDTO dto = new SalesChangeRequestDetailDTO.HistoryItemDTO();
+                HistoryItemDTO dto = new HistoryItemDTO();
                 dto.setId(h.getId());
                 dto.setDate(h.getTimestamp() != null ? h.getTimestamp().format(DATE_FORMATTER) : "");
                 // Use action and userName for description
