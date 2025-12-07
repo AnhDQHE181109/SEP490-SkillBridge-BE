@@ -35,7 +35,7 @@ public class JwtTokenProvider {
         claims.put("userId", user.getId());
         claims.put("email", user.getEmail());
         claims.put("role", user.getRole());
-
+        
         return createToken(claims, user.getEmail());
     }
 
