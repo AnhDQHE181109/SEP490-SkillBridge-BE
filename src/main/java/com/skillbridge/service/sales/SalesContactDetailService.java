@@ -47,12 +47,12 @@ public class SalesContactDetailService {
      */
     public SalesContactDetailDTO getContactDetail(Integer contactId, User currentUser) {
         Contact contact = contactRepository.findById(contactId)
-                .orElseThrow(() -> new RuntimeException("Contact not found"));
+            .orElseThrow(() -> new RuntimeException("Contact not found"));
 
         // Authorization check: Sales Man can only view assigned contacts
         if ("SALES_REP".equals(currentUser.getRole())) {
-            if (contact.getAssigneeUserId() == null ||
-                    !contact.getAssigneeUserId().equals(currentUser.getId())) {
+            if (contact.getAssigneeUserId() == null || 
+                !contact.getAssigneeUserId().equals(currentUser.getId())) {
                 throw new RuntimeException("Access denied. You can only view contacts assigned to you");
             }
         }
@@ -66,7 +66,7 @@ public class SalesContactDetailService {
     @Transactional
     public SalesContactDetailDTO updateContact(Integer contactId, UpdateContactRequest request, User currentUser) {
         Contact contact = contactRepository.findById(contactId)
-                .orElseThrow(() -> new RuntimeException("Contact not found"));
+            .orElseThrow(() -> new RuntimeException("Contact not found"));
 
         // Role-based field update authorization
         if ("SALES_MANAGER".equals(currentUser.getRole())) {
@@ -80,13 +80,13 @@ public class SalesContactDetailService {
             if (request.getAssigneeUserId() != null) {
                 // Sales Manager can assign to themselves
                 User assignee = userRepository.findById(request.getAssigneeUserId())
-                        .orElseThrow(() -> new RuntimeException("Assignee not found"));
+                    .orElseThrow(() -> new RuntimeException("Assignee not found"));
                 contact.setAssigneeUserId(request.getAssigneeUserId());
             }
         } else if ("SALES_REP".equals(currentUser.getRole())) {
             // Sales Man can only update if assigned to them
-            if (contact.getAssigneeUserId() == null ||
-                    !contact.getAssigneeUserId().equals(currentUser.getId())) {
+            if (contact.getAssigneeUserId() == null || 
+                !contact.getAssigneeUserId().equals(currentUser.getId())) {
                 throw new RuntimeException("Access denied. You can only edit contacts assigned to you");
             }
 
@@ -104,16 +104,16 @@ public class SalesContactDetailService {
                 // Parse date-time string to LocalDateTime
                 try {
                     LocalDateTime dateTime = LocalDateTime.parse(
-                            request.getOnlineMtgDateTime().replace("/", "-"),
-                            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                        request.getOnlineMtgDateTime().replace("/", "-"),
+                        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
                     );
                     contact.setOnlineMtgDate(dateTime);
                 } catch (Exception e) {
                     // If parsing fails, try alternative format
                     try {
                         LocalDateTime dateTime = LocalDateTime.parse(
-                                request.getOnlineMtgDateTime(),
-                                DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm")
+                            request.getOnlineMtgDateTime(),
+                            DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm")
                         );
                         contact.setOnlineMtgDate(dateTime);
                     } catch (Exception ex) {
@@ -135,11 +135,11 @@ public class SalesContactDetailService {
     @Transactional
     public SalesContactDetailDTO convertToOpportunity(Integer contactId, User currentUser) {
         Contact contact = contactRepository.findById(contactId)
-                .orElseThrow(() -> new RuntimeException("Contact not found"));
+            .orElseThrow(() -> new RuntimeException("Contact not found"));
 
         // Check if user is assigned to this contact
-        if (contact.getAssigneeUserId() == null ||
-                !contact.getAssigneeUserId().equals(currentUser.getId())) {
+        if (contact.getAssigneeUserId() == null || 
+            !contact.getAssigneeUserId().equals(currentUser.getId())) {
             throw new RuntimeException("Access denied. You can only convert contacts assigned to you");
         }
 
@@ -164,11 +164,11 @@ public class SalesContactDetailService {
     @Transactional
     public CommunicationLogDTO addCommunicationLog(Integer contactId, CreateCommunicationLogRequest request, User currentUser) {
         Contact contact = contactRepository.findById(contactId)
-                .orElseThrow(() -> new RuntimeException("Contact not found"));
+            .orElseThrow(() -> new RuntimeException("Contact not found"));
 
         // Check if user is assigned to this contact
-        if (contact.getAssigneeUserId() == null ||
-                !contact.getAssigneeUserId().equals(currentUser.getId())) {
+        if (contact.getAssigneeUserId() == null || 
+            !contact.getAssigneeUserId().equals(currentUser.getId())) {
             throw new RuntimeException("Access denied. You can only add logs to contacts assigned to you");
         }
 
@@ -186,7 +186,7 @@ public class SalesContactDetailService {
         log.setCreatedAt(LocalDateTime.now());
 
         log = communicationLogRepository.save(log);
-
+        
         // Get user name for the log
         String userName = currentUser.getFullName();
         return convertToLogDTO(log, userName);
@@ -198,11 +198,11 @@ public class SalesContactDetailService {
     @Transactional
     public SalesContactDetailDTO sendMeetingEmail(Integer contactId, com.skillbridge.dto.sales.request.SendMeetingEmailRequest request, User currentUser) {
         Contact contact = contactRepository.findById(contactId)
-                .orElseThrow(() -> new RuntimeException("Contact not found"));
+            .orElseThrow(() -> new RuntimeException("Contact not found"));
 
         // Check if user is assigned to this contact
-        if (contact.getAssigneeUserId() == null ||
-                !contact.getAssigneeUserId().equals(currentUser.getId())) {
+        if (contact.getAssigneeUserId() == null || 
+            !contact.getAssigneeUserId().equals(currentUser.getId())) {
             throw new RuntimeException("Access denied. You can only send meeting emails for contacts assigned to you");
         }
 
@@ -223,12 +223,12 @@ public class SalesContactDetailService {
 
         // Save Online MTG Link and Date time to contact
         contact.setOnlineMtgLink(request.getOnlineMtgLink().trim());
-
+        
         // Parse and save date-time
         try {
             LocalDateTime dateTime;
             String dateTimeStr = request.getOnlineMtgDateTime().trim();
-
+            
             // Handle both formats: "YYYY-MM-DDTHH:mm" (from datetime-local input) and "YYYY/MM/DD HH:mm"
             if (dateTimeStr.contains("T")) {
                 // Format: "YYYY-MM-DDTHH:mm"
@@ -366,12 +366,12 @@ public class SalesContactDetailService {
      */
     private List<CommunicationLogDTO> convertToLogDTOs(List<CommunicationLog> logs) {
         return logs.stream()
-                .map(log -> {
-                    Optional<User> userOpt = userRepository.findById(log.getCreatedBy());
-                    String userName = userOpt.map(User::getFullName).orElse(null);
-                    return convertToLogDTO(log, userName);
-                })
-                .collect(Collectors.toList());
+            .map(log -> {
+                Optional<User> userOpt = userRepository.findById(log.getCreatedBy());
+                String userName = userOpt.map(User::getFullName).orElse(null);
+                return convertToLogDTO(log, userName);
+            })
+            .collect(Collectors.toList());
     }
 
     /**
@@ -381,9 +381,9 @@ public class SalesContactDetailService {
         CommunicationLogDTO dto = new CommunicationLogDTO();
         dto.setId(log.getId());
         dto.setMessage(log.getMessage());
-        dto.setCreatedAt(log.getCreatedAt() != null
-                ? log.getCreatedAt().format(DATE_TIME_FORMATTER)
-                : "");
+        dto.setCreatedAt(log.getCreatedAt() != null 
+            ? log.getCreatedAt().format(DATE_TIME_FORMATTER) 
+            : "");
         dto.setCreatedBy(log.getCreatedBy());
         dto.setCreatedByName(userName);
         return dto;

@@ -122,9 +122,9 @@ public class SalesOpportunitiesService {
                 Predicate clientEmailPredicate = cb.like(cb.lower(root.get("clientEmail")), searchPattern);
 
                 predicates.add(cb.or(
-                        opportunityIdPredicate,
-                        clientNamePredicate,
-                        clientEmailPredicate
+                    opportunityIdPredicate,
+                    clientNamePredicate,
+                    clientEmailPredicate
                 ));
             }
 

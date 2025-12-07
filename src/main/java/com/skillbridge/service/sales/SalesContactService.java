@@ -104,22 +104,22 @@ public class SalesContactService {
             // Search filter (searches in client name, email, company, title, description)
             if (search != null && !search.trim().isEmpty()) {
                 String searchPattern = "%" + search.toLowerCase() + "%";
-
+                
                 // Join with client user for searching (only if clientUserId is not null)
                 jakarta.persistence.criteria.Join<Contact, User> clientUserJoin = root.join("clientUser", jakarta.persistence.criteria.JoinType.LEFT);
-
+                
                 Predicate titlePredicate = cb.like(cb.lower(root.get("title")), searchPattern);
                 Predicate descriptionPredicate = cb.like(cb.lower(root.get("description")), searchPattern);
                 Predicate clientNamePredicate = cb.like(cb.lower(clientUserJoin.get("fullName")), searchPattern);
                 Predicate clientEmailPredicate = cb.like(cb.lower(clientUserJoin.get("email")), searchPattern);
                 Predicate companyPredicate = cb.like(cb.lower(clientUserJoin.get("companyName")), searchPattern);
-
+                
                 predicates.add(cb.or(
-                        titlePredicate,
-                        descriptionPredicate,
-                        clientNamePredicate,
-                        clientEmailPredicate,
-                        companyPredicate
+                    titlePredicate,
+                    descriptionPredicate,
+                    clientNamePredicate,
+                    clientEmailPredicate,
+                    companyPredicate
                 ));
             }
 
@@ -150,12 +150,12 @@ public class SalesContactService {
      */
     private SalesContactListItemDTO convertToDTO(Contact contact, int baseNo) {
         SalesContactListItemDTO dto = new SalesContactListItemDTO();
-
+        
         // Generate contact ID format: CT-YYYY-NN
         String contactId = generateContactId(contact.getId(), contact.getCreatedAt());
         dto.setContactId(contactId);
         dto.setInternalId(contact.getId());
-
+        
         // Get client user information
         User clientUser = null;
         if (contact.getClientUser() != null) {
@@ -164,7 +164,7 @@ public class SalesContactService {
             // Load client user if not already loaded
             clientUser = userRepository.findById(contact.getClientUserId()).orElse(null);
         }
-
+        
         if (clientUser != null) {
             dto.setClientName(clientUser.getFullName() != null ? clientUser.getFullName() : "-");
             dto.setClientEmail(clientUser.getEmail() != null ? clientUser.getEmail() : "-");
@@ -174,9 +174,9 @@ public class SalesContactService {
             dto.setClientEmail("-");
             dto.setCompany("-");
         }
-
+        
         dto.setTitle(contact.getTitle());
-
+        
         // Map status to uppercase format
         String status = contact.getStatus();
         if (status != null) {
@@ -189,7 +189,7 @@ public class SalesContactService {
                 default: dto.setStatus(status.toUpperCase().replace(" ", "_"));
             }
         }
-
+        
         // Get assignee information
         dto.setAssigneeUserId(contact.getAssigneeUserId());
         if (contact.getAssigneeUserId() != null) {
@@ -198,7 +198,7 @@ public class SalesContactService {
                 dto.setAssigneeName(assignee.getFullName());
             }
         }
-
+        
         return dto;
     }
 

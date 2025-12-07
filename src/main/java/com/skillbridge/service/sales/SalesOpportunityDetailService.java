@@ -29,6 +29,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import com.skillbridge.dto.common.AttachmentInfo;
 
 /**
  * Sales Opportunity Detail Service
@@ -61,12 +62,12 @@ public class SalesOpportunityDetailService {
     public OpportunityDetailDTO createFromContact(Integer contactId, CreateOpportunityRequest request, User currentUser) {
         // Fetch contact data
         Contact contact = contactRepository.findById(contactId)
-                .orElseThrow(() -> new RuntimeException("Contact not found"));
+            .orElseThrow(() -> new RuntimeException("Contact not found"));
 
         // Authorization check: Only assigned Sales Man can convert contact to opportunity
         if ("SALES_REP".equals(currentUser.getRole())) {
-            if (contact.getAssigneeUserId() == null ||
-                    !contact.getAssigneeUserId().equals(currentUser.getId())) {
+            if (contact.getAssigneeUserId() == null || 
+                !contact.getAssigneeUserId().equals(currentUser.getId())) {
                 throw new RuntimeException("Access denied. Only assigned Sales Man can convert contact to opportunity");
             }
         }
@@ -103,23 +104,23 @@ public class SalesOpportunityDetailService {
      */
     public OpportunityDetailDTO getOpportunityById(String opportunityId, User currentUser) {
         Opportunity opportunity;
-
+        
         // Check if opportunityId is numeric (ID) or string format (OP-YYYY-NN)
         if (opportunityId.matches("\\d+")) {
             // Numeric ID - find by ID
             Integer id = Integer.parseInt(opportunityId);
             opportunity = opportunityRepository.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Opportunity not found"));
+                .orElseThrow(() -> new RuntimeException("Opportunity not found"));
         } else {
             // String format - find by opportunityId
             opportunity = opportunityRepository.findByOpportunityId(opportunityId)
-                    .orElseThrow(() -> new RuntimeException("Opportunity not found"));
+                .orElseThrow(() -> new RuntimeException("Opportunity not found"));
         }
 
         // Authorization check
         if ("SALES_REP".equals(currentUser.getRole())) {
-            if (opportunity.getCreatedBy() == null ||
-                    !opportunity.getCreatedBy().equals(currentUser.getId())) {
+            if (opportunity.getCreatedBy() == null || 
+                !opportunity.getCreatedBy().equals(currentUser.getId())) {
                 throw new RuntimeException("Access denied. You can only view opportunities created by you");
             }
         }
@@ -141,20 +142,20 @@ public class SalesOpportunityDetailService {
         // Load all proposal versions
         List<Proposal> allProposals = proposalRepository.findByOpportunityIdOrderByVersionDesc(opportunity.getId());
         List<ProposalVersionDTO> proposalVersions = allProposals.stream()
-                .map(this::convertToProposalVersionDTO)
-                .collect(java.util.stream.Collectors.toList());
+            .map(this::convertToProposalVersionDTO)
+            .collect(java.util.stream.Collectors.toList());
         dto.setProposalVersions(proposalVersions);
 
         // Load history
         List<ProposalHistory> historyList = proposalHistoryRepository.findByOpportunityIdOrderByCreatedAtDesc(opportunity.getId());
         List<HistoryEntryDTO> history = historyList.stream()
-                .map(this::convertToHistoryEntryDTO)
-                .collect(java.util.stream.Collectors.toList());
+            .map(this::convertToHistoryEntryDTO)
+            .collect(java.util.stream.Collectors.toList());
         dto.setHistory(history);
 
         // Check if can convert to contract (if any proposal is approved)
         boolean canConvert = allProposals.stream()
-                .anyMatch(p -> "approved".equals(p.getStatus()) && "APPROVE".equals(p.getReviewAction()));
+            .anyMatch(p -> "approved".equals(p.getStatus()) && "APPROVE".equals(p.getReviewAction()));
         dto.setCanConvertToContract(canConvert);
 
         return dto;
@@ -167,23 +168,23 @@ public class SalesOpportunityDetailService {
     @Transactional
     public OpportunityDetailDTO updateOpportunity(String opportunityId, UpdateOpportunityRequest request, User currentUser) {
         Opportunity opportunity;
-
+        
         // Check if opportunityId is numeric (ID) or string format (OP-YYYY-NN)
         if (opportunityId.matches("\\d+")) {
             // Numeric ID - find by ID
             Integer id = Integer.parseInt(opportunityId);
             opportunity = opportunityRepository.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Opportunity not found"));
+                .orElseThrow(() -> new RuntimeException("Opportunity not found"));
         } else {
             // String format - find by opportunityId
             opportunity = opportunityRepository.findByOpportunityId(opportunityId)
-                    .orElseThrow(() -> new RuntimeException("Opportunity not found"));
+                .orElseThrow(() -> new RuntimeException("Opportunity not found"));
         }
 
         // Authorization check
         if ("SALES_REP".equals(currentUser.getRole())) {
-            if (opportunity.getCreatedBy() == null ||
-                    !opportunity.getCreatedBy().equals(currentUser.getId())) {
+            if (opportunity.getCreatedBy() == null || 
+                !opportunity.getCreatedBy().equals(currentUser.getId())) {
                 throw new RuntimeException("Access denied. You can only update opportunities created by you");
             }
         }
@@ -241,8 +242,8 @@ public class SalesOpportunityDetailService {
 
         // Count opportunities in the same year
         long countInYear = opportunityRepository.findAll().stream()
-                .filter(o -> o.getCreatedAt() != null && o.getCreatedAt().getYear() == year)
-                .count();
+            .filter(o -> o.getCreatedAt() != null && o.getCreatedAt().getYear() == year)
+            .count();
 
         // Format: OP-YYYY-NN (NN is 2 digits, zero-padded)
         return String.format("OP-%d-%02d", year, countInYear + 1);
@@ -331,25 +332,64 @@ public class SalesOpportunityDetailService {
         dto.setUpdatedAt(proposal.getUpdatedAt());
 
         // Parse attachments_manifest JSON
+        List<ProposalDTO.AttachmentDTO> attachments = new ArrayList<>();
         if (proposal.getAttachmentsManifest() != null && !proposal.getAttachmentsManifest().isEmpty()) {
             try {
-                Type listType = new TypeToken<List<String>>(){}.getType();
-                List<String> attachments = gson.fromJson(proposal.getAttachmentsManifest(), listType);
-                dto.setAttachments(attachments);
-            } catch (Exception e) {
-                // If parsing fails, use link as single attachment
-                List<String> attachments = new ArrayList<>();
-                if (proposal.getLink() != null) {
-                    attachments.add(proposal.getLink());
+                // Try to parse as List<AttachmentInfo> (new format with fileName)
+                Type attachmentInfoListType = new TypeToken<List<AttachmentInfo>>(){}.getType();
+                List<AttachmentInfo> attachmentInfos = gson.fromJson(proposal.getAttachmentsManifest(), attachmentInfoListType);
+                if (attachmentInfos != null && !attachmentInfos.isEmpty()) {
+                    for (AttachmentInfo info : attachmentInfos) {
+                        attachments.add(new ProposalDTO.AttachmentDTO(info.getS3Key(), info.getFileName(), null));
+                    }
+                } else {
+                    // Fallback: try to parse as List<String> (old format)
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(proposal.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null) {
+                        for (String s3Key : attachmentLinks) {
+                            String fileName = s3Key;
+                            if (fileName.contains("/")) {
+                                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                            }
+                            attachments.add(new ProposalDTO.AttachmentDTO(s3Key, fileName, null));
+                        }
+                    }
                 }
-                dto.setAttachments(attachments);
+            } catch (Exception e) {
+                // If parsing as AttachmentInfo fails, try List<String> (old format)
+                try {
+                    Type stringListType = new TypeToken<List<String>>(){}.getType();
+                    List<String> attachmentLinks = gson.fromJson(proposal.getAttachmentsManifest(), stringListType);
+                    if (attachmentLinks != null) {
+                        for (String s3Key : attachmentLinks) {
+                            String fileName = s3Key;
+                            if (fileName.contains("/")) {
+                                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                            }
+                            attachments.add(new ProposalDTO.AttachmentDTO(s3Key, fileName, null));
+                        }
+                    }
+                } catch (Exception e2) {
+                    // If both fail, use link as single attachment
+                    if (proposal.getLink() != null) {
+                        String fileName = proposal.getLink();
+                        if (fileName.contains("/")) {
+                            fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                        }
+                        attachments.add(new ProposalDTO.AttachmentDTO(proposal.getLink(), fileName, null));
+                    }
+                }
             }
         } else if (proposal.getLink() != null) {
             // If no manifest but has link, use link as single attachment
-            List<String> attachments = new ArrayList<>();
-            attachments.add(proposal.getLink());
-            dto.setAttachments(attachments);
+            String fileName = proposal.getLink();
+            if (fileName.contains("/")) {
+                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+            }
+            attachments.add(new ProposalDTO.AttachmentDTO(proposal.getLink(), fileName, null));
         }
+        dto.setAttachments(attachments);
 
         // Load reviewer name
         if (proposal.getReviewerId() != null) {
@@ -376,8 +416,8 @@ public class SalesOpportunityDetailService {
      */
     private boolean canEditProposal(Proposal proposal) {
         // Can edit if no reviewer assigned, or reviewer assigned but not yet saved (draft state)
-        return proposal.getReviewerId() == null ||
-                (proposal.getStatus().equals("draft") && proposal.getReviewSubmittedAt() == null);
+        return proposal.getReviewerId() == null || 
+               (proposal.getStatus().equals("draft") && proposal.getReviewSubmittedAt() == null);
     }
 
     /**
@@ -387,23 +427,23 @@ public class SalesOpportunityDetailService {
     @Transactional
     public OpportunityDetailDTO markAsLost(String opportunityId, User currentUser) {
         Opportunity opportunity;
-
+        
         // Check if opportunityId is numeric (ID) or string format (OP-YYYY-NN)
         if (opportunityId.matches("\\d+")) {
             // Numeric ID - find by ID
             Integer id = Integer.parseInt(opportunityId);
             opportunity = opportunityRepository.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Opportunity not found"));
+                .orElseThrow(() -> new RuntimeException("Opportunity not found"));
         } else {
             // String format - find by opportunityId
             opportunity = opportunityRepository.findByOpportunityId(opportunityId)
-                    .orElseThrow(() -> new RuntimeException("Opportunity not found"));
+                .orElseThrow(() -> new RuntimeException("Opportunity not found"));
         }
 
         // Authorization check
         if ("SALES_REP".equals(currentUser.getRole())) {
-            if (opportunity.getCreatedBy() == null ||
-                    !opportunity.getCreatedBy().equals(currentUser.getId())) {
+            if (opportunity.getCreatedBy() == null || 
+                !opportunity.getCreatedBy().equals(currentUser.getId())) {
                 throw new RuntimeException("Access denied. You can only mark opportunities created by you as lost");
             }
         }
@@ -422,23 +462,23 @@ public class SalesOpportunityDetailService {
     @Transactional
     public OpportunityDetailDTO convertToContract(String opportunityId, User currentUser) {
         Opportunity opportunity;
-
+        
         // Check if opportunityId is numeric (ID) or string format (OP-YYYY-NN)
         if (opportunityId.matches("\\d+")) {
             // Numeric ID - find by ID
             Integer id = Integer.parseInt(opportunityId);
             opportunity = opportunityRepository.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Opportunity not found"));
+                .orElseThrow(() -> new RuntimeException("Opportunity not found"));
         } else {
             // String format - find by opportunityId
             opportunity = opportunityRepository.findByOpportunityId(opportunityId)
-                    .orElseThrow(() -> new RuntimeException("Opportunity not found"));
+                .orElseThrow(() -> new RuntimeException("Opportunity not found"));
         }
 
         // Authorization check
         if ("SALES_REP".equals(currentUser.getRole())) {
-            if (opportunity.getCreatedBy() == null ||
-                    !opportunity.getCreatedBy().equals(currentUser.getId())) {
+            if (opportunity.getCreatedBy() == null || 
+                !opportunity.getCreatedBy().equals(currentUser.getId())) {
                 throw new RuntimeException("Access denied. You can only convert opportunities created by you");
             }
         }
@@ -446,9 +486,9 @@ public class SalesOpportunityDetailService {
         // Check if client approved a proposal
         List<Proposal> proposals = proposalRepository.findByOpportunityIdOrderByVersionDesc(opportunity.getId());
         Proposal approvedProposal = proposals.stream()
-                .filter(p -> "approved".equals(p.getStatus()) && "APPROVE".equals(p.getReviewAction()))
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("No approved proposal found. Cannot convert to contract"));
+            .filter(p -> "approved".equals(p.getStatus()) && "APPROVE".equals(p.getReviewAction()))
+            .findFirst()
+            .orElseThrow(() -> new RuntimeException("No approved proposal found. Cannot convert to contract"));
 
         // Update opportunity status to "Won"
         opportunity.setStatus("WON");
