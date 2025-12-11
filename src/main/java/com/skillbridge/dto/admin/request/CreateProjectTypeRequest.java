@@ -13,6 +13,7 @@ public class CreateProjectTypeRequest {
     @Size(max = 128, message = "Project type name must not exceed 128 characters")
     private String name;
 
+    @Size(max = 500, message = "Description must not exceed 500 characters")
     private String description;
 
     // Constructors
