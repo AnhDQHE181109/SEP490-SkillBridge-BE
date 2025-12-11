@@ -159,6 +159,11 @@ public class SalesOpportunityDetailController {
         }
 
         try {
+            // Validate files are required when reviewer is provided (not draft)
+            if (reviewerId != null && (files == null || files.length == 0)) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Documents are required"));
+            }
+            
             ProposalDTO proposal = proposalService.createProposal(opportunityId, title, reviewerId, files, currentUser);
             return ResponseEntity.ok(proposal);
         } catch (RuntimeException e) {

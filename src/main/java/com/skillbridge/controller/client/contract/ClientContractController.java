@@ -2,13 +2,18 @@ package com.skillbridge.controller.client.contract;
 
 import com.skillbridge.dto.contract.response.ContractDetailDTO;
 import com.skillbridge.dto.contract.response.ContractListResponse;
+import com.skillbridge.entity.auth.User;
+import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.service.contract.ContractDetailService;
 import com.skillbridge.service.contract.ContractListService;
+import com.skillbridge.util.JwtTokenProvider;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -32,6 +37,12 @@ public class ClientContractController {
     @Autowired
     private ContractDetailService contractDetailService;
     
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Autowired
+    private JwtTokenProvider jwtTokenProvider;
+    
     /**
      * Get contracts for authenticated client
      * GET /api/client/contracts
@@ -42,10 +53,6 @@ public class ClientContractController {
      * - type: Type filter (optional, "All", "MSA", or "SOW")
      * - page: Page number (default: 0)
      * - size: Page size (default: 20)
-     * 
-     * Note: Authentication is handled by SecurityConfig
-     * The clientUserId should be extracted from JWT token or session
-     * For now, we'll use a header or request parameter (should be replaced with JWT extraction)
      */
     @GetMapping
     public ResponseEntity<?> getContracts(
@@ -54,22 +61,21 @@ public class ClientContractController {
         @RequestParam(required = false) String type,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        Authentication authentication,
+        HttpServletRequest request
     ) {
         try {
+            User currentUser = getCurrentUser(authentication, request);
+            
+            if (currentUser == null) {
+                logger.warn("Unauthorized access attempt to GET /client/contracts");
+                return ResponseEntity.status(401).build();
+            }
+
+            Integer userId = currentUser.getId();
             logger.info("GET /client/contracts - userId: {}, search: {}, status: {}, type: {}, page: {}, size: {}", 
                 userId, search, status, type, page, size);
             
-            // TODO: Extract userId from JWT token when JWT authentication is fully implemented
-            // For now, using header (in production, extract from authentication token)
-            
-            if (userId == null) {
-                // Temporary: For testing, use a default user ID
-                // This should be replaced with JWT token extraction
-                userId = 1; // Remove this after JWT implementation
-                logger.warn("No userId provided, using default userId: 1");
-            }
-
             ContractListResponse response = contractListService.getContracts(
                 userId,
                 search,
@@ -83,7 +89,7 @@ public class ClientContractController {
             return ResponseEntity.ok(response);
             
         } catch (Exception e) {
-            logger.error("Error fetching contracts for userId: {}", userId, e);
+            logger.error("Error fetching contracts", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse("Failed to fetch contracts: " + e.getMessage()));
         }
@@ -96,26 +102,30 @@ public class ClientContractController {
     @GetMapping("/{contractId}")
     public ResponseEntity<?> getContractDetail(
         @PathVariable Integer contractId,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        Authentication authentication,
+        HttpServletRequest request
     ) {
         try {
-            logger.info("GET /client/contracts/{} - userId: {}", contractId, userId);
+            User currentUser = getCurrentUser(authentication, request);
             
-            if (userId == null) {
-                userId = 1; // Temporary default for testing
-                logger.warn("No userId provided, using default userId: 1");
+            if (currentUser == null) {
+                logger.warn("Unauthorized access attempt to GET /client/contracts/{}", contractId);
+                return ResponseEntity.status(401).build();
             }
+
+            Integer userId = currentUser.getId();
+            logger.info("GET /client/contracts/{} - userId: {}", contractId, userId);
             
             ContractDetailDTO detail = contractDetailService.getContractDetail(contractId, userId);
             logger.info("Successfully retrieved contract detail for contractId: {}, userId: {}", contractId, userId);
             return ResponseEntity.ok(detail);
             
         } catch (jakarta.persistence.EntityNotFoundException e) {
-            logger.error("Contract not found: contractId={}, userId={}", contractId, userId);
+            logger.error("Contract not found: contractId={}", contractId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ErrorResponse("Contract not found"));
         } catch (Exception e) {
-            logger.error("Error fetching contract detail: contractId={}, userId={}", contractId, userId, e);
+            logger.error("Error fetching contract detail: contractId={}", contractId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse("Failed to fetch contract detail: " + e.getMessage()));
         }
@@ -128,26 +138,30 @@ public class ClientContractController {
     @GetMapping("/{contractId}/versions")
     public ResponseEntity<?> getSOWContractVersions(
         @PathVariable Integer contractId,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        Authentication authentication,
+        HttpServletRequest request
     ) {
         try {
-            logger.info("GET /client/contracts/{}/versions - userId: {}", contractId, userId);
+            User currentUser = getCurrentUser(authentication, request);
             
-            if (userId == null) {
-                userId = 1; // Temporary default for testing
-                logger.warn("No userId provided, using default userId: 1");
+            if (currentUser == null) {
+                logger.warn("Unauthorized access attempt to GET /client/contracts/{}/versions", contractId);
+                return ResponseEntity.status(401).build();
             }
+
+            Integer userId = currentUser.getId();
+            logger.info("GET /client/contracts/{}/versions - userId: {}", contractId, userId);
             
             List<ContractDetailDTO> versions = contractDetailService.getSOWContractVersions(contractId, userId);
             logger.info("Successfully retrieved {} versions for contractId: {}, userId: {}", versions.size(), contractId, userId);
             return ResponseEntity.ok(versions);
             
         } catch (jakarta.persistence.EntityNotFoundException e) {
-            logger.error("Contract not found: contractId={}, userId={}", contractId, userId);
+            logger.error("Contract not found: contractId={}", contractId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ErrorResponse("Contract not found"));
         } catch (Exception e) {
-            logger.error("Error fetching contract versions: contractId={}, userId={}", contractId, userId, e);
+            logger.error("Error fetching contract versions: contractId={}", contractId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse("Failed to fetch contract versions: " + e.getMessage()));
         }
@@ -160,15 +174,19 @@ public class ClientContractController {
     @PostMapping("/{contractId}/approve")
     public ResponseEntity<?> approveContract(
         @PathVariable Integer contractId,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        Authentication authentication,
+        HttpServletRequest request
     ) {
         try {
-            logger.info("POST /client/contracts/{}/approve - userId: {}", contractId, userId);
+            User currentUser = getCurrentUser(authentication, request);
             
-            if (userId == null) {
-                userId = 1; // Temporary default for testing
-                logger.warn("No userId provided, using default userId: 1");
+            if (currentUser == null) {
+                logger.warn("Unauthorized access attempt to POST /client/contracts/{}/approve", contractId);
+                return ResponseEntity.status(401).build();
             }
+
+            Integer userId = currentUser.getId();
+            logger.info("POST /client/contracts/{}/approve - userId: {}", contractId, userId);
             
             contractDetailService.approveContract(contractId, userId);
             
@@ -181,15 +199,15 @@ public class ClientContractController {
             return ResponseEntity.ok(response);
             
         } catch (jakarta.persistence.EntityNotFoundException e) {
-            logger.error("Contract not found: contractId={}, userId={}", contractId, userId);
+            logger.error("Contract not found: contractId={}", contractId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ErrorResponse("Contract not found"));
         } catch (IllegalStateException e) {
-            logger.error("Cannot approve contract: contractId={}, userId={}, error={}", contractId, userId, e.getMessage());
+            logger.error("Cannot approve contract: contractId={}, error={}", contractId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse(e.getMessage()));
         } catch (Exception e) {
-            logger.error("Error approving contract: contractId={}, userId={}", contractId, userId, e);
+            logger.error("Error approving contract: contractId={}", contractId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse("Failed to approve contract: " + e.getMessage()));
         }
@@ -202,18 +220,22 @@ public class ClientContractController {
     @PostMapping("/{contractId}/comment")
     public ResponseEntity<?> addComment(
         @PathVariable Integer contractId,
-        @RequestBody Map<String, String> request,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        @RequestBody Map<String, String> requestBody,
+        Authentication authentication,
+        HttpServletRequest request
     ) {
         try {
+            User currentUser = getCurrentUser(authentication, request);
+            
+            if (currentUser == null) {
+                logger.warn("Unauthorized access attempt to POST /client/contracts/{}/comment", contractId);
+                return ResponseEntity.status(401).build();
+            }
+
+            Integer userId = currentUser.getId();
             logger.info("POST /client/contracts/{}/comment - userId: {}", contractId, userId);
             
-            if (userId == null) {
-                userId = 1; // Temporary default for testing
-                logger.warn("No userId provided, using default userId: 1");
-            }
-            
-            String comment = request.get("comment");
+            String comment = requestBody.get("comment");
             if (comment == null || comment.trim().isEmpty()) {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(new ErrorResponse("Comment is required"));
@@ -229,11 +251,11 @@ public class ClientContractController {
             return ResponseEntity.ok(response);
             
         } catch (jakarta.persistence.EntityNotFoundException e) {
-            logger.error("Contract not found: contractId={}, userId={}", contractId, userId);
+            logger.error("Contract not found: contractId={}", contractId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ErrorResponse("Contract not found"));
         } catch (Exception e) {
-            logger.error("Error adding comment: contractId={}, userId={}", contractId, userId, e);
+            logger.error("Error adding comment: contractId={}", contractId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse("Failed to add comment: " + e.getMessage()));
         }
@@ -246,18 +268,22 @@ public class ClientContractController {
     @PostMapping("/{contractId}/cancel")
     public ResponseEntity<?> cancelContract(
         @PathVariable Integer contractId,
-        @RequestBody Map<String, String> request,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        @RequestBody Map<String, String> requestBody,
+        Authentication authentication,
+        HttpServletRequest request
     ) {
         try {
+            User currentUser = getCurrentUser(authentication, request);
+            
+            if (currentUser == null) {
+                logger.warn("Unauthorized access attempt to POST /client/contracts/{}/cancel", contractId);
+                return ResponseEntity.status(401).build();
+            }
+
+            Integer userId = currentUser.getId();
             logger.info("POST /client/contracts/{}/cancel - userId: {}", contractId, userId);
             
-            if (userId == null) {
-                userId = 1; // Temporary default for testing
-                logger.warn("No userId provided, using default userId: 1");
-            }
-            
-            String reason = request.get("reason");
+            String reason = requestBody.get("reason");
             if (reason == null || reason.trim().isEmpty()) {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(new ErrorResponse("Reason is required"));
@@ -274,20 +300,64 @@ public class ClientContractController {
             return ResponseEntity.ok(response);
             
         } catch (jakarta.persistence.EntityNotFoundException e) {
-            logger.error("Contract not found: contractId={}, userId={}", contractId, userId);
+            logger.error("Contract not found: contractId={}", contractId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ErrorResponse("Contract not found"));
         } catch (IllegalStateException e) {
-            logger.error("Cannot cancel contract: contractId={}, userId={}, error={}", contractId, userId, e.getMessage());
+            logger.error("Cannot cancel contract: contractId={}, error={}", contractId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse(e.getMessage()));
         } catch (Exception e) {
-            logger.error("Error cancelling contract: contractId={}, userId={}", contractId, userId, e);
+            logger.error("Error cancelling contract: contractId={}", contractId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse("Failed to cancel contract: " + e.getMessage()));
         }
     }
     
+    /**
+     * Get current user from authentication or JWT token
+     */
+    private User getCurrentUser(Authentication authentication, HttpServletRequest request) {
+        // Try to get user from authentication (works with JWT filter)
+        // JWT filter sets principal as String (email), not UserDetails
+        if (authentication != null && authentication.isAuthenticated() && authentication.getPrincipal() != null) {
+            try {
+                String principal = authentication.getPrincipal().toString();
+                
+                // If principal is email, find user by email
+                if (principal.contains("@")) {
+                    return userRepository.findByEmail(principal).orElse(null);
+                }
+                
+                // Otherwise, try to parse as user ID
+                try {
+                    Integer userId = Integer.parseInt(principal);
+                    return userRepository.findById(userId).orElse(null);
+                } catch (NumberFormatException e) {
+                    // If not a number, try to find by email
+                    return userRepository.findByEmail(principal).orElse(null);
+                }
+            } catch (Exception e) {
+                // Continue to try token
+            }
+        }
+
+        // Fallback: Try to get user from JWT token in Authorization header
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            try {
+                String token = authHeader.substring(7);
+                String email = jwtTokenProvider.getEmailFromToken(token);
+                return userRepository.findByEmail(email).orElse(null);
+            } catch (Exception e) {
+                // Token invalid or expired
+                return null;
+            }
+        }
+
+        return null;
+    }
+
     /**
      * Error response DTO
      * Used by Spring for JSON serialization

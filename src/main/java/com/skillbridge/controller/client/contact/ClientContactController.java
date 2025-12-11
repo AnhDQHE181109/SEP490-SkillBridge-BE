@@ -2,10 +2,16 @@ package com.skillbridge.controller.client.contact;
 
 import com.skillbridge.dto.contact.request.*;
 import com.skillbridge.dto.contact.response.*;
+import com.skillbridge.entity.auth.User;
+import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.service.contact.ContactDetailService;
 import com.skillbridge.service.contact.ContactListService;
+import com.skillbridge.util.JwtTokenProvider;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -23,6 +29,12 @@ public class ClientContactController {
     @Autowired
     private ContactDetailService contactDetailService;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private JwtTokenProvider jwtTokenProvider;
+
     /**
      * Get contacts for authenticated client
      * GET /api/client/contacts
@@ -32,28 +44,23 @@ public class ClientContactController {
      * - status: Status filter (optional, "All" or specific status)
      * - page: Page number (default: 0)
      * - size: Page size (default: 20)
-     * 
-     * Note: Authentication is handled by SecurityConfig
-     * The clientUserId should be extracted from JWT token or session
-     * For now, we'll use a header or request parameter (should be replaced with JWT extraction)
      */
     @GetMapping
-    public ResponseEntity<ContactListResponse> getContacts(
+    public ResponseEntity<?> getContacts(
         @RequestParam(required = false) String search,
         @RequestParam(required = false, defaultValue = "All") String status,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        Authentication authentication,
+        HttpServletRequest request
     ) {
-        // TODO: Extract userId from JWT token when JWT authentication is fully implemented
-        // For now, using header (in production, extract from authentication token)
+        User currentUser = getCurrentUser(authentication, request);
         
-        if (userId == null) {
-            // Temporary: For testing, use a default user ID
-            // This should be replaced with JWT token extraction
-            userId = 1; // Remove this after JWT implementation
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
         }
 
+        Integer userId = currentUser.getId();
         ContactListResponse response = contactListService.getContactsForClient(
             userId,
             search,
@@ -68,25 +75,20 @@ public class ClientContactController {
     /**
      * Create a new contact for authenticated client
      * POST /api/client/contacts
-     * 
-     * Note: Authentication is handled by SecurityConfig
-     * The clientUserId should be extracted from JWT token or session
-     * For now, we'll use a header or request parameter (should be replaced with JWT extraction)
      */
     @PostMapping
-    public ResponseEntity<CreateContactResponse> createContact(
+    public ResponseEntity<?> createContact(
         @RequestBody CreateContactRequest request,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        Authentication authentication,
+        HttpServletRequest httpRequest
     ) {
-        // TODO: Extract userId from JWT token when JWT authentication is fully implemented
-        // For now, using header (in production, extract from authentication token)
+        User currentUser = getCurrentUser(authentication, httpRequest);
         
-        if (userId == null) {
-            // Temporary: For testing, use a default user ID
-            // This should be replaced with JWT token extraction
-            userId = 1; // Remove this after JWT implementation
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
         }
 
+        Integer userId = currentUser.getId();
         CreateContactResponse response = contactListService.createContact(userId, request);
 
         if (response.isSuccess()) {
@@ -101,16 +103,28 @@ public class ClientContactController {
      * GET /api/client/contacts/{contactId}
      */
     @GetMapping("/{contactId}")
-    public ResponseEntity<ContactDetailDTO> getContactDetail(
+    public ResponseEntity<?> getContactDetail(
         @PathVariable Integer contactId,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        Authentication authentication,
+        HttpServletRequest request
     ) {
-        if (userId == null) {
-            userId = 1; // Temporary: For testing
+        User currentUser = getCurrentUser(authentication, request);
+        
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
         }
 
+        try {
+            Integer userId = currentUser.getId();
         ContactDetailDTO response = contactDetailService.getContactDetail(contactId, userId);
         return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            // Contact not found or does not belong to this client
+            return ResponseEntity.status(404).build();
+        } catch (Exception e) {
+            // Other unexpected errors
+            return ResponseEntity.status(500).build();
+        }
     }
 
     /**
@@ -118,15 +132,19 @@ public class ClientContactController {
      * POST /api/client/contacts/{contactId}/logs
      */
     @PostMapping("/{contactId}/logs")
-    public ResponseEntity<CommunicationLogDTO> addCommunicationLog(
+    public ResponseEntity<?> addCommunicationLog(
         @PathVariable Integer contactId,
-        @RequestBody AddLogRequest request,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        @Valid @RequestBody AddLogRequest request,
+        Authentication authentication,
+        HttpServletRequest httpRequest
     ) {
-        if (userId == null) {
-            userId = 1; // Temporary: For testing
+        User currentUser = getCurrentUser(authentication, httpRequest);
+        
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
         }
 
+        Integer userId = currentUser.getId();
         CommunicationLogDTO response = contactDetailService.addCommunicationLog(
             contactId, 
             userId, 
@@ -140,15 +158,19 @@ public class ClientContactController {
      * POST /api/client/contacts/{contactId}/proposal/comment
      */
     @PostMapping("/{contactId}/proposal/comment")
-    public ResponseEntity<CommentResponse> addProposalComment(
+    public ResponseEntity<?> addProposalComment(
         @PathVariable Integer contactId,
-        @RequestBody CommentRequest request,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        @Valid @RequestBody CommentRequest request,
+        Authentication authentication,
+        HttpServletRequest httpRequest
     ) {
-        if (userId == null) {
-            userId = 1; // Temporary: For testing
+        User currentUser = getCurrentUser(authentication, httpRequest);
+        
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
         }
 
+        Integer userId = currentUser.getId();
         CommentResponse response = contactDetailService.addProposalComment(
             contactId, 
             userId, 
@@ -162,15 +184,19 @@ public class ClientContactController {
      * POST /api/client/contacts/{contactId}/cancel
      */
     @PostMapping("/{contactId}/cancel")
-    public ResponseEntity<CancelResponse> cancelConsultation(
+    public ResponseEntity<?> cancelConsultation(
         @PathVariable Integer contactId,
-        @RequestBody CancelRequest request,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        @Valid @RequestBody CancelRequest request,
+        Authentication authentication,
+        HttpServletRequest httpRequest
     ) {
-        if (userId == null) {
-            userId = 1; // Temporary: For testing
+        User currentUser = getCurrentUser(authentication, httpRequest);
+        
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
         }
 
+        Integer userId = currentUser.getId();
         CancelResponse response = contactDetailService.cancelConsultation(
             contactId, 
             userId, 
@@ -184,16 +210,64 @@ public class ClientContactController {
      * POST /api/client/contacts/{contactId}/proposal/approve
      */
     @PostMapping("/{contactId}/proposal/approve")
-    public ResponseEntity<ApproveResponse> approveProposal(
+    public ResponseEntity<?> approveProposal(
         @PathVariable Integer contactId,
-        @RequestHeader(value = "X-User-Id", required = false) Integer userId
+        Authentication authentication,
+        HttpServletRequest request
     ) {
-        if (userId == null) {
-            userId = 1; // Temporary: For testing
+        User currentUser = getCurrentUser(authentication, request);
+        
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
         }
 
+        Integer userId = currentUser.getId();
         ApproveResponse response = contactDetailService.approveProposal(contactId, userId);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Get current user from authentication or JWT token
+     */
+    private User getCurrentUser(Authentication authentication, HttpServletRequest request) {
+        // Try to get user from authentication (works with JWT filter)
+        // JWT filter sets principal as String (email), not UserDetails
+        if (authentication != null && authentication.isAuthenticated() && authentication.getPrincipal() != null) {
+            try {
+                String principal = authentication.getPrincipal().toString();
+                
+                // If principal is email, find user by email
+                if (principal.contains("@")) {
+                    return userRepository.findByEmail(principal).orElse(null);
+                }
+                
+                // Otherwise, try to parse as user ID
+                try {
+                    Integer userId = Integer.parseInt(principal);
+                    return userRepository.findById(userId).orElse(null);
+                } catch (NumberFormatException e) {
+                    // If not a number, try to find by email
+                    return userRepository.findByEmail(principal).orElse(null);
+                }
+            } catch (Exception e) {
+                // Continue to try token
+            }
+        }
+
+        // Fallback: Try to get user from JWT token in Authorization header
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            try {
+                String token = authHeader.substring(7);
+                String email = jwtTokenProvider.getEmailFromToken(token);
+                return userRepository.findByEmail(email).orElse(null);
+            } catch (Exception e) {
+                // Token invalid or expired
+                return null;
+            }
+        }
+
+        return null;
     }
 }
 
