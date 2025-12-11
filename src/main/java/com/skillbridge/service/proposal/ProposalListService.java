@@ -158,14 +158,12 @@ public class ProposalListService {
             return "Under review";
         }
         switch (backendStatus.toLowerCase()) {
-            case "draft":
-            case "under review":
-                return "Under review";
-            case "reject":
+            case "sent_to_client":
+                return "Under review"; // Client Under Review
+            case "revision_requested":
                 return "Request for change";
-            case "sent to client":
             case "approved":
-                return "Approved";
+                return "Approved"; // Client Approved
             default:
                 return "Under review";
         }
