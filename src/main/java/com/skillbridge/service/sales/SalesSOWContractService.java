@@ -4,7 +4,12 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.skillbridge.dto.sales.request.CreateSOWRequest;
 import com.skillbridge.dto.sales.request.CreateChangeRequestRequest;
-import com.skillbridge.dto.sales.response.*;
+import com.skillbridge.dto.sales.response.SOWContractDTO;
+import com.skillbridge.dto.sales.response.SOWContractDetailDTO;
+import com.skillbridge.dto.sales.response.ChangeRequestListItemDTO;
+import com.skillbridge.dto.sales.response.ChangeRequestsListResponseDTO;
+import com.skillbridge.dto.sales.response.ChangeRequestResponseDTO;
+import com.skillbridge.dto.sales.response.SalesChangeRequestDetailDTO;
 import com.skillbridge.entity.auth.User;
 import com.skillbridge.entity.contract.*;
 import com.skillbridge.repository.auth.UserRepository;
@@ -2543,30 +2548,47 @@ public class SalesSOWContractService {
                 return result;
             }
             
-            String[] parts = engineerLevel.trim().split("\\s+", 2);
+            // Normalize to avoid duplicates like "Middle Frontend Middle Frontend"
+            String cleaned = engineerLevel.trim();
+            String[] parts = cleaned.split("\\s+", 2);
             if (parts.length >= 2) {
-                result.put("level", parts[0]); // First word is level
-                result.put("role", parts[1]); // Rest is role
+                String level = parts[0];
+                String role = parts[1];
+                // If role already contains level (case-insensitive), don't duplicate
+                if (role.toLowerCase().contains(level.toLowerCase())) {
+                    result.put("level", level);
+                    result.put("role", role);
             } else {
-                result.put("level", engineerLevel);
+                    result.put("level", level);
+                    result.put("role", role);
+                }
+            } else {
+                result.put("level", cleaned);
                 result.put("role", "");
             }
             return result;
         };
         
-        // Create resource events for each engineer change
-        // IMPORTANT: Always create events for all engineers in CR, even if baseline is empty
+        // Create resource events only when there is an actual change compared to baseline
         for (ChangeRequestEngagedEngineer crEng : crEngineers) {
+            // Try to match baseline by ID first (most reliable if CR carries baseline ID)
+            SOWEngagedEngineerBase matchingBaseEng = null;
+            boolean matchedById = false;
+            if (crEng.getId() != null) {
+                matchingBaseEng = baselineEngineers.stream()
+                    .filter(b -> b.getId() != null && b.getId().equals(crEng.getId()))
+                    .findFirst()
+                    .orElse(null);
+                matchedById = matchingBaseEng != null;
+            }
             // Parse engineer level to get role and level
             // Format: "Middle Backend Engineer" -> level="Middle", role="Backend Engineer"
             java.util.Map<String, String> parsed = parseEngineerLevel.apply(crEng.getEngineerLevel());
             String crLevel = parsed.get("level");
             String crRole = parsed.get("role");
             
-            // Try to find matching baseline engineer by role and level
-            // Match if role and level are similar (case-insensitive)
-            SOWEngagedEngineerBase matchingBaseEng = null;
-            if (!baselineEngineers.isEmpty() && !crLevel.isEmpty() && !crRole.isEmpty()) {
+            // If no match by ID, try fuzzy match by role/level
+            if (!matchedById && !baselineEngineers.isEmpty() && !crLevel.isEmpty() && !crRole.isEmpty()) {
                 matchingBaseEng = baselineEngineers.stream()
                     .filter(base -> {
                         // Compare level and role (case-insensitive, partial match)
@@ -2583,7 +2605,16 @@ public class SalesSOWContractService {
             }
             
             if (matchingBaseEng != null) {
-                // MODIFY event - engineer exists in baseline
+                // Check if anything changed compared to baseline
+                boolean changed =
+                    !equalsNullable(matchingBaseEng.getStartDate(), crEng.getStartDate() != null ? crEng.getStartDate() : effectiveStart) ||
+                    !equalsNullable(matchingBaseEng.getEndDate(), crEng.getEndDate()) ||
+                    !equalsNullable(matchingBaseEng.getRating(), crEng.getRating()) ||
+                    !equalsNullable(matchingBaseEng.getUnitRate(), crEng.getSalary()) ||
+                    !equalsNullable(matchingBaseEng.getRole(), crRole) ||
+                    !equalsNullable(matchingBaseEng.getLevel(), crLevel);
+                
+                if (changed) {
                 crEventService.createResourceEvent(
                     changeRequest,
                     CRResourceEvent.ResourceAction.MODIFY,
@@ -2600,13 +2631,35 @@ public class SalesSOWContractService {
                     crEng.getEndDate(),
                     effectiveStart
                 );
+                }
             } else {
                 // ADD event - new engineer not in baseline (or baseline is empty)
-                // Use parsed level and role, or fallback to engineerLevel
+                // Only create ADD nếu thực sự khác baseline (không match hoàn toàn với bất kỳ bản ghi baseline)
+                boolean hasData = (crEng.getRating() != null || crEng.getSalary() != null
+                    || crEng.getStartDate() != null || crEng.getEndDate() != null
+                    || (crEng.getEngineerLevel() != null && !crEng.getEngineerLevel().trim().isEmpty()));
+                
+                // Nếu có baseline, kiểm tra xem có bản ghi nào trùng hoàn toàn (level/role/start/end/rating/salary)
+                boolean sameAsBaseline = false;
+                if (!baselineEngineers.isEmpty()) {
+                    for (SOWEngagedEngineerBase base : baselineEngineers) {
+                        boolean levelSame = equalsNullable(base.getLevel(), crLevel);
+                        boolean roleSame = equalsNullable(base.getRole(), crRole);
+                        boolean startSame = equalsNullable(base.getStartDate(), crEng.getStartDate() != null ? crEng.getStartDate() : effectiveStart);
+                        boolean endSame = equalsNullable(base.getEndDate(), crEng.getEndDate());
+                        boolean ratingSame = equalsNullable(base.getRating(), crEng.getRating());
+                        boolean salarySame = equalsNullable(base.getUnitRate(), crEng.getSalary());
+                        if (levelSame && roleSame && startSame && endSame && ratingSame && salarySame) {
+                            sameAsBaseline = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (hasData && !sameAsBaseline) {
                 String eventRole = !crRole.isEmpty() ? crRole : crEng.getEngineerLevel();
                 String eventLevel = !crLevel.isEmpty() ? crLevel : "";
                 
-                // If we couldn't parse, use the full engineerLevel as role
                 if (eventRole.isEmpty() && eventLevel.isEmpty()) {
                     eventRole = crEng.getEngineerLevel();
                     eventLevel = "";
@@ -2628,6 +2681,7 @@ public class SalesSOWContractService {
                     crEng.getEndDate(),
                     effectiveStart
                 );
+                }
             }
         }
         

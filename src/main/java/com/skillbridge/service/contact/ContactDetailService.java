@@ -19,9 +19,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import com.skillbridge.entity.opportunity.Opportunity;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import java.lang.reflect.Type;
+import com.skillbridge.dto.common.AttachmentInfo;
 
 /**
  * Contact Detail Service
@@ -29,6 +35,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class ContactDetailService {
+    
+    private final Gson gson = new Gson();
 
     @Autowired
     private ContactRepository contactRepository;
@@ -48,6 +56,9 @@ public class ContactDetailService {
     @Autowired
     private ProposalRepository proposalRepository;
 
+    @Autowired
+    private com.skillbridge.repository.opportunity.OpportunityRepository opportunityRepository;
+
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm");
 
     /**
@@ -56,7 +67,7 @@ public class ContactDetailService {
     public ContactDetailDTO getContactDetail(Integer contactId, Integer clientUserId) {
         // Validate contact belongs to client
         Contact contact = contactRepository.findByIdAndClientUserId(contactId, clientUserId)
-            .orElseThrow(() -> new RuntimeException("Contact not found"));
+            .orElseThrow(() -> new IllegalArgumentException("Contact not found or does not belong to this client"));
 
         // Get client user information
         User clientUser = null;
@@ -68,20 +79,37 @@ public class ContactDetailService {
         // Get communication logs
         List<CommunicationLog> logs = communicationLogRepository.findByContactIdOrderByCreatedAtDesc(contactId);
 
-        // Get proposal for this contact (get the most recent one if multiple exist)
+        // Get proposal for this contact
+        // Priority: Get the most recent proposal that can be reviewed (sent_to_client, revision_requested, approved)
+        // If no reviewable proposal exists, get the most recent proposal
         List<Proposal> proposals = proposalRepository.findByContactId(contactId);
-        Proposal proposal = null;
+        
+        // Also check if contact has an opportunity and get proposals from opportunity
+        // This ensures we get proposals created from opportunities even if contactId is set
+        List<Opportunity> opportunities = opportunityRepository.findByContactId(contactId);
+        
+        // Get all proposals from opportunities linked to this contact
+        List<Proposal> opportunityProposals = new ArrayList<>();
+        for (Opportunity opp : opportunities) {
+            List<Proposal> oppProposals = proposalRepository.findByOpportunityIdOrderByVersionDesc(opp.getId());
+            if (oppProposals != null && !oppProposals.isEmpty()) {
+                opportunityProposals.addAll(oppProposals);
+            }
+        }
+        
+        // Combine proposals from contactId and opportunityId
+        List<Proposal> allProposals = new ArrayList<>();
         if (proposals != null && !proposals.isEmpty()) {
-            // Get the most recent proposal (sorted by createdAt DESC)
-            proposal = proposals.stream()
-                .sorted((p1, p2) -> {
-                    if (p1.getCreatedAt() == null && p2.getCreatedAt() == null) return 0;
-                    if (p1.getCreatedAt() == null) return 1;
-                    if (p2.getCreatedAt() == null) return -1;
-                    return p2.getCreatedAt().compareTo(p1.getCreatedAt());
-                })
-                .findFirst()
-                .orElse(null);
+            allProposals.addAll(proposals);
+        }
+        if (!opportunityProposals.isEmpty()) {
+            // Add opportunity proposals that are not already in the list (by ID)
+            for (Proposal oppProp : opportunityProposals) {
+                boolean exists = allProposals.stream().anyMatch(p -> p.getId().equals(oppProp.getId()));
+                if (!exists) {
+                    allProposals.add(oppProp);
+                }
+            }
         }
 
         // Get latest proposal comment if exists
@@ -116,8 +144,8 @@ public class ContactDetailService {
             dto.setProposalStatus(mapProposalStatusToFrontend(proposal.getStatus()));
             
             // Set approved time if proposal is approved
-            if ("Approved".equalsIgnoreCase(proposal.getStatus()) && proposal.getUpdatedAt() != null) {
-                dto.setProposalApprovedAt(proposal.getUpdatedAt().format(DATE_TIME_FORMATTER));
+            if ("approved".equalsIgnoreCase(displayProposal.getStatus()) && displayProposal.getUpdatedAt() != null) {
+                dto.setProposalApprovedAt(displayProposal.getUpdatedAt().format(DATE_TIME_FORMATTER));
             }
         } else {
             // Fallback to contact entity fields (may be null or old data)
@@ -179,11 +207,14 @@ public class ContactDetailService {
         comment.setCreatedBy(userId);
         comment = proposalCommentRepository.save(comment);
 
-        // Update proposal status to "Request for Change"
+        // Update proposal: save client feedback and set status to "revision_requested"
+        // First, try to find proposal by contactId
         List<Proposal> proposals = proposalRepository.findByContactId(contactId);
+        Proposal proposal = null;
+        
         if (proposals != null && !proposals.isEmpty()) {
-            // Get the most recent proposal
-            Proposal proposal = proposals.stream()
+            // Get the most recent proposal (current proposal) by contactId
+            proposal = proposals.stream()
                 .sorted((p1, p2) -> {
                     if (p1.getCreatedAt() == null && p2.getCreatedAt() == null) return 0;
                     if (p1.getCreatedAt() == null) return 1;
@@ -192,10 +223,29 @@ public class ContactDetailService {
                 })
                 .findFirst()
                 .orElse(null);
+        }
+        
+        // If proposal found and has opportunityId, find the current proposal by opportunityId
+        if (proposal != null && proposal.getOpportunityId() != null) {
+            Optional<Proposal> currentProposalOpt = proposalRepository.findByOpportunityIdAndIsCurrent(
+                proposal.getOpportunityId(), true);
+            if (currentProposalOpt.isPresent()) {
+                proposal = currentProposalOpt.get();
+            }
+        }
             
             if (proposal != null) {
-                proposal.setStatus("Request for Change");
+            // Save client comment to clientFeedback field
+            proposal.setClientFeedback(message);
+            proposal.setStatus("revision_requested");
                 proposalRepository.save(proposal);
+            
+            // Update opportunity status if proposal is linked to an opportunity
+            if (proposal.getOpportunityId() != null) {
+                opportunityRepository.findById(proposal.getOpportunityId()).ifPresent(opportunity -> {
+                    opportunity.setStatus("REVISION");
+                    opportunityRepository.save(opportunity);
+                });
             }
         }
 
@@ -238,11 +288,60 @@ public class ContactDetailService {
         Contact contact = contactRepository.findByIdAndClientUserId(contactId, userId)
             .orElseThrow(() -> new RuntimeException("Contact not found"));
 
-        // Get proposal for this contact (get the most recent one if multiple exist)
+        // Get proposal for this contact
+        // Priority: Get the current proposal (is_current = true) with status "sent_to_client"
+        // This ensures we approve the correct proposal that the client is viewing
         List<Proposal> proposals = proposalRepository.findByContactId(contactId);
-        if (proposals != null && !proposals.isEmpty()) {
-            // Get the most recent proposal
-            Proposal proposal = proposals.stream()
+        Proposal proposal = null;
+        
+        // Also check if contact has an opportunity and get proposals from opportunity
+        List<Opportunity> opportunities = opportunityRepository.findByContactId(contactId);
+        
+        // First, try to get the current proposal (is_current = true) with status "sent_to_client"
+        for (Opportunity opp : opportunities) {
+            Optional<Proposal> currentOpt = proposalRepository.findByOpportunityIdAndIsCurrent(opp.getId(), true);
+            if (currentOpt.isPresent()) {
+                Proposal candidate = currentOpt.get();
+                // Only approve proposals with status "sent_to_client" (the one client is reviewing)
+                if ("sent_to_client".equals(candidate.getStatus())) {
+                    proposal = candidate;
+                    break; // Found the correct proposal, exit loop
+                }
+            }
+        }
+        
+        // If not found via opportunity, try to find from contactId proposals
+        if (proposal == null && proposals != null && !proposals.isEmpty()) {
+            // Filter proposals that can be reviewed (sent_to_client, revision_requested, approved)
+            List<Proposal> reviewableProposals = proposals.stream()
+                .filter(p -> {
+                    String status = p.getStatus();
+                    return "sent_to_client".equals(status) || 
+                           "revision_requested".equals(status) || 
+                           "approved".equals(status);
+                })
+                .sorted((p1, p2) -> {
+                    // Priority: sent_to_client > approved > revision_requested
+                    // Within same status, prioritize is_current = true, then by createdAt DESC
+                    boolean p1Current = Boolean.TRUE.equals(p1.getIsCurrent());
+                    boolean p2Current = Boolean.TRUE.equals(p2.getIsCurrent());
+                    if (p1Current != p2Current) {
+                        return p1Current ? -1 : 1;
+                    }
+                    // Sort by createdAt DESC (newest first)
+                    if (p1.getCreatedAt() == null && p2.getCreatedAt() == null) return 0;
+                    if (p1.getCreatedAt() == null) return 1;
+                    if (p2.getCreatedAt() == null) return -1;
+                    return p2.getCreatedAt().compareTo(p1.getCreatedAt());
+                })
+                .collect(Collectors.toList());
+            
+            // If reviewable proposals exist, get the first one (highest priority)
+            if (!reviewableProposals.isEmpty()) {
+                proposal = reviewableProposals.get(0);
+            } else {
+                // If no reviewable proposal, get the most recent proposal overall
+                proposal = proposals.stream()
                 .sorted((p1, p2) -> {
                     if (p1.getCreatedAt() == null && p2.getCreatedAt() == null) return 0;
                     if (p1.getCreatedAt() == null) return 1;
@@ -251,12 +350,23 @@ public class ContactDetailService {
                 })
                 .findFirst()
                 .orElse(null);
+            }
+        }
             
             if (proposal != null) {
-                // Update proposal status and updatedAt will be set automatically by @PreUpdate
-                proposal.setStatus("Approved");
+            // Update proposal status to "approved" (lowercase) when client approves
+            proposal.setStatus("approved");
                 proposalRepository.save(proposal);
+            
+            // Update opportunity status to WON when client approves proposal
+            if (proposal.getOpportunityId() != null) {
+                opportunityRepository.findById(proposal.getOpportunityId()).ifPresent(opportunity -> {
+                    opportunity.setStatus("WON");
+                    opportunityRepository.save(opportunity);
+                });
             }
+        } else {
+            throw new RuntimeException("No reviewable proposal found to approve");
         }
 
         // Also update contact entity for backward compatibility
@@ -275,13 +385,20 @@ public class ContactDetailService {
         }
         switch (backendStatus.toLowerCase()) {
             case "draft":
+            case "internal_review":
             case "under review":
                 return "Pending";
-            case "reject":
+            case "sent_to_client":
+                // Proposal sent to client for review - client can approve or comment
+                return "Pending";
+            case "revision_requested":
             case "request for change":
+                // Client has requested changes - status shows as "Request for Change"
                 return "Request for Change";
             case "approved":
                 return "Approved";
+            case "rejected":
+                return "Pending"; // Rejected proposals may still be reviewable
             default:
                 return "Pending";
         }

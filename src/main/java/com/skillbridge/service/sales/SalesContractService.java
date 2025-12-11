@@ -7,11 +7,11 @@ import com.skillbridge.dto.contract.response.ContractListResponse;
 import com.skillbridge.entity.auth.User;
 import com.skillbridge.entity.contract.Contract;
 import com.skillbridge.entity.contract.SOWContract;
+import com.skillbridge.entity.contract.ContractInternalReview;
 import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.repository.contract.ContractRepository;
 import com.skillbridge.repository.contract.SOWContractRepository;
-import jakarta.persistence.criteria.Join;
-import jakarta.persistence.criteria.JoinType;
+import com.skillbridge.repository.contract.ContractInternalReviewRepository;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -26,10 +26,10 @@ import java.math.BigDecimal;
 import java.text.DecimalFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Sales Contract Service
@@ -46,6 +46,9 @@ public class SalesContractService {
     
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private ContractInternalReviewRepository contractInternalReviewRepository;
     
     /**
      * Get contracts list with role-based filtering
@@ -229,7 +232,7 @@ public class SalesContractService {
         dto.setPeriod(formatPeriod(contract.getPeriodStart(), contract.getPeriodEnd()));
         dto.setValue(contract.getValue());
         dto.setFormattedValue(formatValue(contract.getValue()));
-        dto.setStatus(contract.getStatus().name().replace("_", " "));
+        dto.setStatus(resolveStatusDisplay("MSA", contract.getStatus().name(), contract.getId()));
         dto.setAssignee(contract.getAssigneeId());
         
         // Load client name and email from users table
@@ -289,7 +292,7 @@ public class SalesContractService {
         dto.setPeriod(formatPeriod(sowContract.getPeriodStart(), sowContract.getPeriodEnd()));
         dto.setValue(sowContract.getValue());
         dto.setFormattedValue(formatValue(sowContract.getValue()));
-        dto.setStatus(sowContract.getStatus().name().replace("_", " "));
+        dto.setStatus(resolveStatusDisplay("SOW", sowContract.getStatus().name(), sowContract.getId()));
         dto.setAssignee(sowContract.getAssigneeId());
         
         // Load client name and email from users table
@@ -321,6 +324,43 @@ public class SalesContractService {
         // Use last 2 digits of ID as sequence number (simplified)
         int sequenceNumber = id % 100;
         return String.format("%s-%d-%02d", type, year, sequenceNumber);
+    }
+
+    /**
+     * Map status enum/string to display value.
+     * - Internal Review must remain "Internal Review"
+     * - Under Review requires latest review action to decide:
+     *     * APPROVE  -> Client Under Review
+     *     * otherwise -> Internal Review
+     */
+    private String resolveStatusDisplay(String contractType, String statusName, Integer contractId) {
+        if (statusName == null) return "Draft";
+        String normalized = statusName.trim().replace("_", " ").trim();
+        if (!normalized.equalsIgnoreCase("Under Review")) {
+            return normalized;
+        }
+
+        // For Under Review, check latest internal review action
+        try {
+            Optional<ContractInternalReview> reviewOpt;
+            if ("SOW".equalsIgnoreCase(contractType)) {
+                reviewOpt = contractInternalReviewRepository
+                    .findFirstBySowContractIdAndContractTypeOrderByReviewedAtDesc(contractId, "SOW");
+            } else {
+                reviewOpt = contractInternalReviewRepository
+                    .findFirstByContractIdAndContractTypeOrderByReviewedAtDesc(contractId, "MSA");
+            }
+
+            if (reviewOpt.isPresent()) {
+                String action = reviewOpt.get().getReviewAction();
+                if ("APPROVE".equalsIgnoreCase(action)) {
+                    return "Client Under Review";
+                }
+            }
+        } catch (Exception ignored) {
+            // Fallback to Internal Review if anything goes wrong
+        }
+        return "Internal Review";
     }
     
     /**
