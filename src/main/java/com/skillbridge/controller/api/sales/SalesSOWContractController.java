@@ -105,13 +105,41 @@ public class SalesSOWContractController {
                 return ResponseEntity.status(400).body(new ErrorResponse("Assignee User ID is required"));
             }
             
+            // Validate Effective End >= Effective Start
+            try {
+                java.time.LocalDate startDate = java.time.LocalDate.parse(effectiveStart);
+                java.time.LocalDate endDate = java.time.LocalDate.parse(effectiveEnd);
+                if (endDate.isBefore(startDate)) {
+                    return ResponseEntity.status(400).body(new ErrorResponse("Effective End date must be on or after Effective Start date"));
+                }
+            } catch (java.time.format.DateTimeParseException e) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Invalid date format for Effective Start or Effective End"));
+            }
+            
+            // Validate note and scopeSummary length
+            if (note != null && note.length() > 500) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Note must not exceed 500 characters"));
+            }
+            if (scopeSummary != null && scopeSummary.length() > 5000) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Scope summary must not exceed 5000 characters"));
+            }
+            if (projectName != null && projectName.length() > 255) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Project name must not exceed 255 characters"));
+            }
+            
+            // If reviewer is assigned and caller sent Draft (e.g. Save Contract), force Internal Review
+            String normalizedStatus = status;
+            if (reviewerId != null && "Draft".equalsIgnoreCase(status)) {
+                normalizedStatus = "Internal Review";
+            }
+
             CreateSOWRequest createRequest = new CreateSOWRequest();
             createRequest.setMsaId(msaId);
             createRequest.setClientId(clientId);
             createRequest.setEngagementType(engagementType);
             createRequest.setEffectiveStart(effectiveStart);
             createRequest.setEffectiveEnd(effectiveEnd);
-            createRequest.setStatus(status);
+            createRequest.setStatus(normalizedStatus);
             createRequest.setAssigneeUserId(assigneeUserId);
             createRequest.setNote(note);
             createRequest.setScopeSummary(scopeSummary);
@@ -136,6 +164,29 @@ public class SalesSOWContractController {
                 try {
                     Type engagedEngineerListType = new TypeToken<List<CreateSOWRequest.EngagedEngineerDTO>>(){}.getType();
                     List<CreateSOWRequest.EngagedEngineerDTO> engagedEngineersList = gson.fromJson(engagedEngineers, engagedEngineerListType);
+                    
+                    // Validate Engaged Engineer dates for Retainer type
+                    if ("Retainer".equals(engagementType) && engagedEngineersList != null) {
+                        for (int i = 0; i < engagedEngineersList.size(); i++) {
+                            CreateSOWRequest.EngagedEngineerDTO engineer = engagedEngineersList.get(i);
+                            if (engineer.getStartDate() != null && engineer.getEndDate() != null) {
+                                try {
+                                    java.time.LocalDate engineerStartDate = java.time.LocalDate.parse(engineer.getStartDate());
+                                    java.time.LocalDate engineerEndDate = java.time.LocalDate.parse(engineer.getEndDate());
+                                    if (engineerEndDate.isBefore(engineerStartDate)) {
+                                        return ResponseEntity.status(400).body(
+                                            new ErrorResponse("Engaged Engineer " + (i + 1) + ": End Date must be on or after Start Date")
+                                        );
+                                    }
+                                } catch (java.time.format.DateTimeParseException e) {
+                                    return ResponseEntity.status(400).body(
+                                        new ErrorResponse("Engaged Engineer " + (i + 1) + ": Invalid date format for Start Date or End Date")
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    
                     createRequest.setEngagedEngineers(engagedEngineersList != null ? engagedEngineersList : new ArrayList<>());
                 } catch (Exception e) {
                     return ResponseEntity.status(400).body(new ErrorResponse("Invalid engagedEngineers JSON: " + e.getMessage()));
@@ -288,6 +339,12 @@ public class SalesSOWContractController {
     @PutMapping("/{contractId}")
     public ResponseEntity<?> updateSOWContract(
         @PathVariable Integer contractId,
+        @RequestParam(required = false) String projectName,
+        @RequestParam(required = false) String effectiveStart,
+        @RequestParam(required = false) String effectiveEnd,
+        @RequestParam(required = false) String note,
+        @RequestParam(required = false) String scopeSummary,
+        @RequestParam(required = false) Integer assigneeUserId,
         @RequestParam(required = false) String engagedEngineers, // JSON string (for Retainer)
         @RequestParam(required = false) String billingDetails, // JSON string
         @RequestParam(required = false) MultipartFile[] attachments,
@@ -305,7 +362,41 @@ public class SalesSOWContractController {
         }
         
         try {
+            // Validate Effective End >= Effective Start
+            if (effectiveStart != null && effectiveEnd != null && !effectiveStart.trim().isEmpty() && !effectiveEnd.trim().isEmpty()) {
+                try {
+                    java.time.LocalDate startDate = java.time.LocalDate.parse(effectiveStart);
+                    java.time.LocalDate endDate = java.time.LocalDate.parse(effectiveEnd);
+                    if (endDate.isBefore(startDate)) {
+                        return ResponseEntity.status(400).body(new ErrorResponse("Effective End date must be on or after Effective Start date"));
+                    }
+                } catch (java.time.format.DateTimeParseException e) {
+                    return ResponseEntity.status(400).body(new ErrorResponse("Invalid date format for Effective Start or Effective End"));
+                }
+            }
+            
+            // Validate note length
+            if (note != null && note.length() > 500) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Note must not exceed 500 characters"));
+            }
+            
+            // Validate scopeSummary length
+            if (scopeSummary != null && scopeSummary.length() > 5000) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Scope summary must not exceed 5000 characters"));
+            }
+            
+            // Validate projectName length
+            if (projectName != null && projectName.length() > 255) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Project name must not exceed 255 characters"));
+            }
+            
             CreateSOWRequest updateRequest = new CreateSOWRequest();
+            updateRequest.setProjectName(projectName);
+            updateRequest.setEffectiveStart(effectiveStart);
+            updateRequest.setEffectiveEnd(effectiveEnd);
+            updateRequest.setNote(note);
+            updateRequest.setScopeSummary(scopeSummary);
+            updateRequest.setAssigneeUserId(assigneeUserId);
             
             // Parse engagedEngineers if provided
             if (engagedEngineers != null && !engagedEngineers.trim().isEmpty()) {

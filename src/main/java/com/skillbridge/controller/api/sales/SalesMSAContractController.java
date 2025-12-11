@@ -17,13 +17,10 @@ import com.skillbridge.service.sales.SalesMSAContractService;
 import com.skillbridge.util.JwtTokenProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -89,6 +86,22 @@ public class SalesMSAContractController {
         }
         
         try {
+            // Validate Effective End >= Effective Start
+            try {
+                java.time.LocalDate startDate = java.time.LocalDate.parse(effectiveStart);
+                java.time.LocalDate endDate = java.time.LocalDate.parse(effectiveEnd);
+                if (endDate.isBefore(startDate)) {
+                    return ResponseEntity.status(400).body(new ErrorResponse("Effective End date must be on or after Effective Start date"));
+                }
+            } catch (java.time.format.DateTimeParseException e) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Invalid date format for Effective Start or Effective End"));
+            }
+            
+            // Validate note length
+            if (note != null && note.length() > 500) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Note must not exceed 500 characters"));
+            }
+            
             CreateMSARequest createRequest = new CreateMSARequest();
             createRequest.setOpportunityId(opportunityId);
             createRequest.setClientId(clientId);
@@ -219,6 +232,22 @@ public class SalesMSAContractController {
         }
         
         try {
+            // Validate Effective End >= Effective Start
+            try {
+                java.time.LocalDate startDate = java.time.LocalDate.parse(effectiveStart);
+                java.time.LocalDate endDate = java.time.LocalDate.parse(effectiveEnd);
+                if (endDate.isBefore(startDate)) {
+                    return ResponseEntity.status(400).body(new ErrorResponse("Effective End date must be on or after Effective Start date"));
+                }
+            } catch (java.time.format.DateTimeParseException e) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Invalid date format for Effective Start or Effective End"));
+            }
+            
+            // Validate note length
+            if (note != null && note.length() > 500) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Note must not exceed 500 characters"));
+            }
+            
             CreateMSARequest updateRequest = new CreateMSARequest();
             updateRequest.setOpportunityId(opportunityId);
             updateRequest.setClientId(clientId);

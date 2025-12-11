@@ -721,14 +721,27 @@ public class SalesSOWContractService {
             
             if (!baselineEngineers.isEmpty()) {
                 // Event-based: Calculate current engineers from baseline + events
-                List<CurrentEngineerState> currentEngineerStates = 
+                List<CREventService.CurrentEngineerState> currentEngineerStates = 
                     crEventService.calculateCurrentResources(contractId, currentDate);
                 
                 // Convert to DTOs
-                for (CurrentEngineerState state : currentEngineerStates) {
+                for (CREventService.CurrentEngineerState state : currentEngineerStates) {
                     SOWContractDetailDTO.EngagedEngineerDTO dto = new SOWContractDetailDTO.EngagedEngineerDTO();
                     dto.setId(state.getEngineerId());
-                    dto.setEngineerLevel(state.getLevel() + " " + state.getRole()); // Combine level and role
+                    String level = state.getLevel() != null ? state.getLevel().trim() : "";
+                    String role = state.getRole() != null ? state.getRole().trim() : "";
+                    // Avoid duplicates like "Middle Frontend Middle Frontend"
+                    String engineerLevel;
+                    if (!level.isEmpty() && !role.isEmpty()) {
+                        String roleLower = role.toLowerCase();
+                        String levelLower = level.toLowerCase();
+                        engineerLevel = roleLower.contains(levelLower) ? role : (level + " " + role);
+                    } else if (!role.isEmpty()) {
+                        engineerLevel = role;
+                    } else {
+                        engineerLevel = level;
+                    }
+                    dto.setEngineerLevel(engineerLevel.trim());
                     dto.setStartDate(state.getStartDate() != null ? state.getStartDate().toString() : null);
                     dto.setEndDate(state.getEndDate() != null ? state.getEndDate().toString() : null);
                     // Event-based system uses baseline which is Monthly by default
@@ -1349,13 +1362,19 @@ public class SalesSOWContractService {
         changeRequest.setDescription(request.getSummary()); // Use summary as description
         changeRequest.setReason(request.getComment()); // Use comment as reason
         
-        // Set effective dates for Retainer
-        if (isRetainer) {
+        // Set effective dates (for both Retainer and Fixed Price)
             if (request.getEffectiveFrom() != null && !request.getEffectiveFrom().trim().isEmpty()) {
+            try {
                 changeRequest.setEffectiveFrom(LocalDate.parse(request.getEffectiveFrom()));
+            } catch (Exception e) {
+                throw new RuntimeException("Invalid effectiveFrom date format. Expected: YYYY-MM-DD");
+            }
             }
             if (request.getEffectiveUntil() != null && !request.getEffectiveUntil().trim().isEmpty()) {
+            try {
                 changeRequest.setEffectiveUntil(LocalDate.parse(request.getEffectiveUntil()));
+            } catch (Exception e) {
+                throw new RuntimeException("Invalid effectiveUntil date format. Expected: YYYY-MM-DD");
             }
         }
         
@@ -1428,9 +1447,17 @@ public class SalesSOWContractService {
         // Save change request
         changeRequest = changeRequestRepository.save(changeRequest);
         
-        // Save engaged engineers (only for Retainer)
-        if (isRetainer && request.getEngagedEngineers() != null && !request.getEngagedEngineers().isEmpty()) {
+        // Prepare baseline/current engineers for comparison (skip saving unchanged auto-fill)
+        List<SOWEngagedEngineerBase> baselineEngs = sowBaselineService.getBaselineResources(sowContractIdForCR);
+        List<SOWEngagedEngineer> legacyEngs = sowEngagedEngineerRepository.findBySowContractId(sowContractIdForCR);
+        LocalDate effectiveStart = changeRequest.getEffectiveFrom();
+
+        // Save engaged engineers (skip if identical to baseline/current)
+        if (request.getEngagedEngineers() != null && !request.getEngagedEngineers().isEmpty()) {
             for (CreateChangeRequestRequest.EngagedEngineerDTO engineerDTO : request.getEngagedEngineers()) {
+                if (isSameAsExistingEng(engineerDTO, baselineEngs, legacyEngs, effectiveStart)) {
+                    continue; // skip unchanged auto-fill
+                }
                 ChangeRequestEngagedEngineer engineer = new ChangeRequestEngagedEngineer();
                 engineer.setChangeRequestId(changeRequest.getId());
                 engineer.setEngineerLevel(engineerDTO.getEngineerLevel());
@@ -1446,7 +1473,6 @@ public class SalesSOWContractService {
                 engineer.setBillingType(billingType);
                 
                 if ("Hourly".equals(billingType)) {
-                    // For hourly billing
                     if (engineerDTO.getHourlyRate() != null) {
                         engineer.setHourlyRate(BigDecimal.valueOf(engineerDTO.getHourlyRate()));
                     }
@@ -1456,21 +1482,17 @@ public class SalesSOWContractService {
                     if (engineerDTO.getSubtotal() != null) {
                         engineer.setSubtotal(BigDecimal.valueOf(engineerDTO.getSubtotal()));
                     } else if (engineerDTO.getHourlyRate() != null && engineerDTO.getHours() != null) {
-                        // Auto-calculate subtotal if not provided
                         engineer.setSubtotal(BigDecimal.valueOf(engineerDTO.getHourlyRate() * engineerDTO.getHours()));
                     }
-                    // For hourly, set salary to subtotal
                     if (engineerDTO.getSubtotal() != null) {
                         engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSubtotal()));
                     } else if (engineerDTO.getSalary() != null) {
                         engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSalary()));
                     }
-                    // Rating is not used for hourly, but keep it for backward compatibility
                     if (engineerDTO.getRating() != null) {
                         engineer.setRating(BigDecimal.valueOf(engineerDTO.getRating()));
                     }
                 } else {
-                    // For monthly billing
                     engineer.setHourlyRate(null);
                     engineer.setHours(null);
                     engineer.setSubtotal(null);
@@ -1890,7 +1912,15 @@ public class SalesSOWContractService {
         // Update engineers and billing (only for Retainer)
         changeRequestEngagedEngineerRepository.deleteByChangeRequestId(changeRequestId);
         if (isRetainer && request.getEngagedEngineers() != null && !request.getEngagedEngineers().isEmpty()) {
+            // Prepare baseline/current for comparison
+            List<SOWEngagedEngineerBase> baselineEngs = sowBaselineService.getBaselineResources(sowContractId);
+            List<SOWEngagedEngineer> legacyEngs = sowEngagedEngineerRepository.findBySowContractId(sowContractId);
+            LocalDate effectiveStart = changeRequest.getEffectiveFrom();
+
             for (CreateChangeRequestRequest.EngagedEngineerDTO engineerDTO : request.getEngagedEngineers()) {
+                if (isSameAsExistingEng(engineerDTO, baselineEngs, legacyEngs, effectiveStart)) {
+                    continue; // skip unchanged auto-fill
+                }
                 ChangeRequestEngagedEngineer engineer = new ChangeRequestEngagedEngineer();
                 engineer.setChangeRequestId(changeRequestId);
                 engineer.setEngineerLevel(engineerDTO.getEngineerLevel());
@@ -1906,7 +1936,6 @@ public class SalesSOWContractService {
                 engineer.setBillingType(billingType);
                 
                 if ("Hourly".equals(billingType)) {
-                    // For hourly billing
                     if (engineerDTO.getHourlyRate() != null) {
                         engineer.setHourlyRate(BigDecimal.valueOf(engineerDTO.getHourlyRate()));
                     }
@@ -1916,21 +1945,17 @@ public class SalesSOWContractService {
                     if (engineerDTO.getSubtotal() != null) {
                         engineer.setSubtotal(BigDecimal.valueOf(engineerDTO.getSubtotal()));
                     } else if (engineerDTO.getHourlyRate() != null && engineerDTO.getHours() != null) {
-                        // Auto-calculate subtotal if not provided
                         engineer.setSubtotal(BigDecimal.valueOf(engineerDTO.getHourlyRate() * engineerDTO.getHours()));
                     }
-                    // For hourly, set salary to subtotal
                     if (engineerDTO.getSubtotal() != null) {
                         engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSubtotal()));
                     } else if (engineerDTO.getSalary() != null) {
                         engineer.setSalary(BigDecimal.valueOf(engineerDTO.getSalary()));
                     }
-                    // Rating is not used for hourly, but keep it for backward compatibility
                     if (engineerDTO.getRating() != null) {
                         engineer.setRating(BigDecimal.valueOf(engineerDTO.getRating()));
                     }
                 } else {
-                    // For monthly billing
                     engineer.setHourlyRate(null);
                     engineer.setHours(null);
                     engineer.setSubtotal(null);
@@ -1989,12 +2014,20 @@ public class SalesSOWContractService {
             throw new RuntimeException("Change request does not belong to this SOW contract");
         }
         
-        if (!"Draft".equals(changeRequest.getStatus())) {
-            throw new RuntimeException("Only Draft change requests can be submitted");
+        if (!"Draft".equals(changeRequest.getStatus()) && !"Processing".equals(changeRequest.getStatus())) {
+            throw new RuntimeException("Only Draft or Processing change requests can be submitted");
         }
         
-        if (changeRequest.getCreatedBy() == null || !changeRequest.getCreatedBy().equals(currentUser.getId())) {
-            throw new RuntimeException("Only the creator can submit this change request");
+        // Allow submission if:
+        // 1. User is the creator, OR
+        // 2. User is a Sales Rep and is the assignee of the SOW contract
+        boolean isCreator = changeRequest.getCreatedBy() != null && changeRequest.getCreatedBy().equals(currentUser.getId());
+        boolean isAssignee = "SALES_REP".equals(currentUser.getRole()) && 
+                            sowContract.getAssigneeUserId() != null && 
+                            sowContract.getAssigneeUserId().equals(currentUser.getId());
+        
+        if (!isCreator && !isAssignee) {
+            throw new RuntimeException("Only the creator or assigned Sales Rep can submit this change request");
         }
         
         if (internalReviewerId == null) {
@@ -2606,7 +2639,7 @@ public class SalesSOWContractService {
         // Create billing events
         for (ChangeRequestBillingDetail crBillingDetail : crBilling) {
             if (crBillingDetail.getPaymentDate() != null && !crBillingDetail.getPaymentDate().isBefore(effectiveStart)) {
-                LocalDate billingMonth = crBillingDetail.getPaymentDate().withDayOfMonth(1);
+                LocalDate billingMonth = crBillingDetail.getPaymentDate();
                 
                 // Calculate delta (simplified - in production, compare with baseline)
                 BigDecimal deltaAmount = crBillingDetail.getAmount();
@@ -2720,7 +2753,7 @@ public class SalesSOWContractService {
         List<ChangeRequestBillingDetail> crBilling = changeRequestBillingDetailRepository.findByChangeRequestId(changeRequest.getId());
         for (ChangeRequestBillingDetail crBillingDetail : crBilling) {
             if (crBillingDetail.getPaymentDate() != null && !crBillingDetail.getPaymentDate().isBefore(effectiveStart)) {
-                LocalDate billingMonth = crBillingDetail.getPaymentDate().withDayOfMonth(1);
+                LocalDate billingMonth = crBillingDetail.getPaymentDate();
                 
                 // Calculate delta
                 BigDecimal deltaAmount = crBillingDetail.getAmount();
@@ -2769,7 +2802,7 @@ public class SalesSOWContractService {
         sowBaselineService.createBaseline(sowContractId);
         
         // 3. Call CREventService.calculateCurrentResources(sowContractId, asOfDate)
-        List<CurrentEngineerState> currentEngineerStates = 
+        List<CREventService.CurrentEngineerState> currentEngineerStates = 
             crEventService.calculateCurrentResources(sowContractId, asOfDate);
         
         // 4. Convert to DTO format
@@ -2782,7 +2815,7 @@ public class SalesSOWContractService {
             engineerIdToBaseIdMap.put(base.getId(), base.getId());
         }
         
-        for (CurrentEngineerState state : currentEngineerStates) {
+        for (CREventService.CurrentEngineerState state : currentEngineerStates) {
             com.skillbridge.dto.sales.response.CurrentResourcesDTO.ResourceDTO dto = 
                 new com.skillbridge.dto.sales.response.CurrentResourcesDTO.ResourceDTO();
             
@@ -2792,9 +2825,21 @@ public class SalesSOWContractService {
             dto.setRole(state.getRole());
             
             // Build engineerLevelLabel: "Level Role" (e.g., "Middle Backend Engineer")
-            String levelStr = state.getLevel() != null ? state.getLevel() : "";
-            String roleStr = state.getRole() != null ? state.getRole() : "";
-            String engineerLevelLabel = (levelStr + " " + roleStr).trim();
+            String levelStr = state.getLevel() != null ? state.getLevel().trim() : "";
+            String roleStr = state.getRole() != null ? state.getRole().trim() : "";
+            String engineerLevelLabel;
+            if (!levelStr.isEmpty() && !roleStr.isEmpty()) {
+                // If role already contains level (case-insensitive), use role only to avoid duplicates
+                if (roleStr.toLowerCase().contains(levelStr.toLowerCase())) {
+                    engineerLevelLabel = roleStr;
+                } else {
+                    engineerLevelLabel = (levelStr + " " + roleStr).trim();
+                }
+            } else if (!roleStr.isEmpty()) {
+                engineerLevelLabel = roleStr;
+            } else {
+                engineerLevelLabel = levelStr;
+            }
             dto.setEngineerLevelLabel(engineerLevelLabel);
             
             dto.setStartDate(state.getStartDate());

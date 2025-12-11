@@ -4,7 +4,10 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.skillbridge.dto.sales.request.CreateMSARequest;
 import com.skillbridge.dto.sales.request.CreateChangeRequestRequest;
-import com.skillbridge.dto.sales.response.*;
+import com.skillbridge.dto.sales.response.MSAContractDTO;
+import com.skillbridge.dto.sales.response.MSAContractDetailDTO;
+import com.skillbridge.dto.sales.response.ChangeRequestResponseDTO;
+import com.skillbridge.dto.sales.response.SalesChangeRequestDetailDTO;
 import com.skillbridge.entity.auth.User;
 import com.skillbridge.entity.contract.Contract;
 import com.skillbridge.entity.contract.ContractHistory;
@@ -193,9 +196,15 @@ public class SalesMSAContractService {
             }
         }
         
-        // Handle review if reviewer is assigned and review is submitted
+        // Handle review only when a Sales Manager submits an action
         if (request.getReviewerId() != null && request.getReviewAction() != null) {
+            if ("SALES_MANAGER".equals(currentUser.getRole())) {
             submitReview(contract.getId(), request.getReviewNotes(), request.getReviewAction(), currentUser);
+            } else {
+                // Sales Reps can update contract details but cannot submit review actions
+                // Ignore reviewAction to prevent permission error
+                System.out.println("Review action ignored for non-manager user: " + currentUser.getId());
+            }
         }
         
         // Create initial history entry
@@ -702,8 +711,8 @@ public class SalesMSAContractService {
             // When approved, change status to "Client Under Review" (mapped from Under_Review enum)
             contract.setStatus(Contract.ContractStatus.Under_Review); // Maps to "Client Under Review" in display
         } else if ("REQUEST_REVISION".equalsIgnoreCase(action)) {
-            // When request revision, change status back to Draft to allow editing
-            contract.setStatus(Contract.ContractStatus.Draft);
+            // When requesting revision, move contract to Request for Change
+            contract.setStatus(Contract.ContractStatus.Request_for_Change);
         }
         
         contract = contractRepository.save(contract);
@@ -1264,9 +1273,9 @@ public class SalesMSAContractService {
         
         // Get engaged engineers
         List<ChangeRequestEngagedEngineer> engineers = changeRequestEngagedEngineerRepository.findByChangeRequestId(changeRequestId);
-        List<EngagedEngineerDTO> engineerDTOs = engineers.stream()
+        List<SalesChangeRequestDetailDTO.EngagedEngineerDTO> engineerDTOs = engineers.stream()
             .map(e -> {
-                EngagedEngineerDTO dto = new EngagedEngineerDTO();
+                SalesChangeRequestDetailDTO.EngagedEngineerDTO dto = new SalesChangeRequestDetailDTO.EngagedEngineerDTO();
                 dto.setId(e.getId());
                 dto.setEngineerLevel(e.getEngineerLevel());
                 dto.setStartDate(e.getStartDate() != null ? e.getStartDate().toString() : null);
@@ -1283,9 +1292,9 @@ public class SalesMSAContractService {
         
         // Get billing details
         List<ChangeRequestBillingDetail> billingDetails = changeRequestBillingDetailRepository.findByChangeRequestId(changeRequestId);
-        List<BillingDetailDTO> billingDTOs = billingDetails.stream()
+        List<SalesChangeRequestDetailDTO.BillingDetailDTO> billingDTOs = billingDetails.stream()
             .map(b -> {
-                BillingDetailDTO dto = new BillingDetailDTO();
+                SalesChangeRequestDetailDTO.BillingDetailDTO dto = new SalesChangeRequestDetailDTO.BillingDetailDTO();
                 dto.setId(b.getId());
                 dto.setPaymentDate(b.getPaymentDate() != null ? b.getPaymentDate().toString() : null);
                 dto.setDeliveryNote(b.getDeliveryNote());
@@ -1309,9 +1318,9 @@ public class SalesMSAContractService {
         
         // Get history
         List<ChangeRequestHistory> history = changeRequestHistoryRepository.findByChangeRequestIdOrderByTimestampDesc(changeRequestId);
-        List<HistoryItemDTO> historyDTOs = history.stream()
+        List<SalesChangeRequestDetailDTO.HistoryItemDTO> historyDTOs = history.stream()
             .map(h -> {
-                HistoryItemDTO dto = new HistoryItemDTO();
+                SalesChangeRequestDetailDTO.HistoryItemDTO dto = new SalesChangeRequestDetailDTO.HistoryItemDTO();
                 dto.setId(h.getId());
                 dto.setDate(h.getTimestamp() != null ? h.getTimestamp().format(DATE_FORMATTER) : "");
                 // Use action and userName for description
