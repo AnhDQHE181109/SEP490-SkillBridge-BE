@@ -83,7 +83,8 @@ public class SOWBaselineService {
         for (RetainerBillingDetail billing : billingDetails) {
             RetainerBillingBase baseBilling = new RetainerBillingBase();
             baseBilling.setSowContractId(sowContractId);
-            baseBilling.setBillingMonth(billing.getPaymentDate().withDayOfMonth(1)); // First day of month
+            // Use Payment Date from billing details instead of first day of month
+            baseBilling.setBillingMonth(billing.getPaymentDate());
             baseBilling.setAmount(billing.getAmount());
             baseBilling.setDescription(billing.getDeliveryNote());
             retainerBillingBaseRepository.save(baseBilling);
