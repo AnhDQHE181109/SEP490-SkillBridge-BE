@@ -128,7 +128,11 @@ public class CreateChangeRequestRequest {
 
     // Inner DTOs
     public static class EngagedEngineerDTO {
+        private Integer baseEngineerId; // Baseline engineer ID (for matching with baseline)
+        private Integer engineerId; // Engineer ID (for matching with current engineers)
         private String engineerLevel;
+        private String level; // Engineer level (separate field from payload)
+        private String role; // Engineer role (separate field from payload)
         private String startDate; // Format: YYYY-MM-DD
         private String endDate; // Format: YYYY-MM-DD
         private String billingType; // "Monthly" or "Hourly"
@@ -208,6 +212,38 @@ public class CreateChangeRequestRequest {
 
         public void setSalary(Double salary) {
             this.salary = salary;
+        }
+
+        public Integer getBaseEngineerId() {
+            return baseEngineerId;
+        }
+
+        public void setBaseEngineerId(Integer baseEngineerId) {
+            this.baseEngineerId = baseEngineerId;
+        }
+
+        public Integer getEngineerId() {
+            return engineerId;
+        }
+
+        public void setEngineerId(Integer engineerId) {
+            this.engineerId = engineerId;
+        }
+
+        public String getLevel() {
+            return level;
+        }
+
+        public void setLevel(String level) {
+            this.level = level;
+        }
+
+        public String getRole() {
+            return role;
+        }
+
+        public void setRole(String role) {
+            this.role = role;
         }
     }
 

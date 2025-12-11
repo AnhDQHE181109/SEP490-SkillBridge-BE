@@ -1,10 +1,13 @@
 package com.skillbridge.dto.contact.request;
 
+import jakarta.validation.constraints.Size;
+
 /**
  * Cancel Request DTO
  * Request DTO for cancelling a consultation
  */
 public class CancelRequest {
+    @Size(max = 500, message = "Reason must not exceed 500 characters")
     private String reason;
 
     public CancelRequest() {

@@ -15,6 +15,7 @@ public class CreateSkillRequest {
     @Size(max = 128, message = "Skill name must not exceed 128 characters")
     private String name;
 
+    @Size(max = 500, message = "Description must not exceed 500 characters")
     private String description;
 
     @Valid
@@ -55,5 +56,30 @@ public class CreateSkillRequest {
         this.subSkills = subSkills;
     }
 
+    /**
+     * Sub Skill Request nested class
+     */
+    public static class SubSkillRequest {
+        @NotBlank(message = "Sub-skill name is required")
+        @Size(max = 128, message = "Sub-skill name must not exceed 128 characters")
+        private String name;
+
+        // Constructors
+        public SubSkillRequest() {
+        }
+
+        public SubSkillRequest(String name) {
+            this.name = name;
+        }
+
+        // Getters and Setters
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+    }
 }
 

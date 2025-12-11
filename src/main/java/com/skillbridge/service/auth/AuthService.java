@@ -53,12 +53,19 @@ public class AuthService {
     private String baseUrl;
 
     /**
-     * Login user with email and password
+     * Login user with email and password (Client users only)
+     * Only users with CLIENT role can login
      */
     public LoginResponse login(LoginRequest request) {
         // Find user by email
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("Invalid email or password"));
+
+        // Check if user has CLIENT role
+        String role = user.getRole();
+        if (role == null || !role.equals("CLIENT")) {
+            throw new RuntimeException("Access denied. This account does not have client permissions");
+        }
 
         // Check if account is active
         if (!user.getIsActive()) {

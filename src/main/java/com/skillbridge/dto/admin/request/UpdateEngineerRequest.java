@@ -23,6 +23,7 @@ public class UpdateEngineerRequest {
     private String email;
 
     @Size(max = 20, message = "Phone must not exceed 20 characters")
+    @Pattern(regexp = "^[0-9-]*$", message = "Phone can only contain numbers and dashes")
     private String phone;
 
     @Size(max = 16, message = "Gender must not exceed 16 characters")
@@ -34,6 +35,7 @@ public class UpdateEngineerRequest {
     @Pattern(regexp = "Junior|Mid-level|Senior|Lead", message = "Seniority must be one of: Junior, Mid-level, Senior, Lead")
     private String seniority; // Level field in form maps to seniority
 
+    @Size(max = 500, message = "Introduction must not exceed 500 characters")
     private String introduction; // Introduce field in form
 
     // Professional Info
@@ -50,7 +52,7 @@ public class UpdateEngineerRequest {
     private String projectTypeExperience; // Comma-separated string of project type IDs or names
 
     // Foreign Language
-    @Size(max = 64, message = "Language summary must not exceed 64 characters")
+    @Size(max = 500, message = "Language summary must not exceed 500 characters")
     private String languageSummary;
 
     // Other

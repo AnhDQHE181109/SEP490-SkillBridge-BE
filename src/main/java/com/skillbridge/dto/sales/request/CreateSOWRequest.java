@@ -18,6 +18,7 @@ public class CreateSOWRequest {
     private String note;
     @Size(max = 5000, message = "Scope summary must not exceed 5000 characters")
     private String scopeSummary;
+    @Size(max = 255, message = "Project name must not exceed 255 characters")
     private String projectName;
     private Double contractValue; // Total contract value for Fixed Price
     private List<DeliveryItemDTO> deliveryItems; // For Retainer (deprecated, use engagedEngineers instead)
