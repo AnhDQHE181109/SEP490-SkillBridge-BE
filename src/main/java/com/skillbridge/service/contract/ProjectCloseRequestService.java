@@ -207,6 +207,50 @@ public class ProjectCloseRequestService {
     }
     
     /**
+     * Convert ProjectCloseRequest entity to DetailDTO
+     */
+    private ProjectCloseRequestDetailDTO convertToDetailDTO(ProjectCloseRequest closeRequest) {
+        ProjectCloseRequestDetailDTO dto = new ProjectCloseRequestDetailDTO();
+        dto.setId(closeRequest.getId());
+        dto.setSowId(closeRequest.getSowId());
+        dto.setStatus(closeRequest.getStatus().name());
+        dto.setMessage(closeRequest.getMessage());
+        dto.setLinks(closeRequest.getLinks());
+        dto.setClientRejectReason(closeRequest.getClientRejectReason());
+        dto.setCreatedAt(closeRequest.getCreatedAt());
+        dto.setUpdatedAt(closeRequest.getUpdatedAt());
+        
+        // Load SOW information
+        SOWContract sow = sowContractRepository.findById(closeRequest.getSowId())
+            .orElse(null);
+        if (sow != null) {
+            dto.setSowContractName(sow.getContractName());
+            dto.setSowStatus(sow.getStatus().name());
+            // Format period
+            if (sow.getPeriodStart() != null && sow.getPeriodEnd() != null) {
+                dto.setSowPeriod(String.format("%s-%s", 
+                    sow.getPeriodStart().toString().replace("-", "/"),
+                    sow.getPeriodEnd().toString().replace("-", "/")));
+            }
+        }
+        
+        // Load requester information
+        User requester = userRepository.findById(closeRequest.getRequestedByUserId())
+            .orElse(null);
+        if (requester != null) {
+            ProjectCloseRequestDetailDTO.UserInfoDTO userInfo = 
+                new ProjectCloseRequestDetailDTO.UserInfoDTO(
+                    requester.getId(),
+                    requester.getFullName(),
+                    requester.getEmail()
+                );
+            dto.setRequestedBy(userInfo);
+        }
+        
+        return dto;
+    }
+    
+    /**
      * Create history entry for SOW contract
      */
     private void createHistoryEntry(Integer sowId, String activityType, String description, 

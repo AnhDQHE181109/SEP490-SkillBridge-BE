@@ -1,6 +1,7 @@
 package com.skillbridge.controller.api.sales;
 
 import com.skillbridge.dto.contract.request.CreateProjectCloseRequestRequest;
+import com.skillbridge.dto.contract.request.ResubmitProjectCloseRequestRequest;
 import com.skillbridge.dto.contract.response.ProjectCloseRequestResponse;
 import com.skillbridge.entity.auth.User;
 import com.skillbridge.repository.auth.UserRepository;
@@ -59,6 +60,40 @@ public class SalesProjectCloseRequestController {
                     sowId, request, currentUser
             );
 
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Internal server error: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Resubmit a rejected Close Request
+     * POST /sales/close-requests/{id}/resubmit
+     */
+    @PostMapping("/{id}/resubmit")
+    public ResponseEntity<?> resubmitCloseRequest(
+        @PathVariable("id") Integer closeRequestId,
+        @RequestBody ResubmitProjectCloseRequestRequest request,
+        Authentication authentication,
+        HttpServletRequest httpRequest
+    ) {
+        try {
+            User currentUser = getCurrentUser(authentication, httpRequest);
+            if (currentUser == null) {
+                return ResponseEntity.status(401).body(new ErrorResponse("User not authenticated"));
+            }
+            
+            String role = currentUser.getRole();
+            if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+                return ResponseEntity.status(403).body(new ErrorResponse("Access denied: Only Sales Representatives and Sales Managers can resubmit close requests"));
+            }
+            
+            ProjectCloseRequestResponse response = projectCloseRequestService.resubmitCloseRequest(
+                closeRequestId, request, currentUser
+            );
+            
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
