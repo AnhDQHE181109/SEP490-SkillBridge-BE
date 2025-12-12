@@ -348,5 +348,5 @@ public class AdminSkillService {
         dto.setParentSkillId(skill.getParentSkillId());
         return dto;
     }
-
 }
+

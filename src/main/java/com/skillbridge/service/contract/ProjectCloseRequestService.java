@@ -30,6 +30,9 @@ public class ProjectCloseRequestService {
     private SOWContractRepository sowContractRepository;
     
     @Autowired
+    private UserRepository userRepository;
+    
+    @Autowired
     private ContractHistoryRepository contractHistoryRepository;
     
     /**
@@ -63,6 +66,47 @@ public class ProjectCloseRequestService {
         if (hasPending) {
             throw new RuntimeException("A pending close request already exists for this SOW. Please wait for client response or resubmit the existing request.");
         }
+    }
+    
+    /**
+     * Create a new Project Close Request
+     */
+    public ProjectCloseRequestResponse createCloseRequest(
+        Integer sowId, 
+        CreateProjectCloseRequestRequest request, 
+        User currentUser
+    ) {
+        // Validate
+        validateCanCreateCloseRequest(sowId, currentUser);
+        
+        // Validate message and links length
+        if (request.getMessage() != null && request.getMessage().length() > 5000) {
+            throw new RuntimeException("Message must not exceed 5000 characters.");
+        }
+        if (request.getLinks() != null && request.getLinks().length() > 2000) {
+            throw new RuntimeException("Links must not exceed 2000 characters.");
+        }
+        
+        // Create entity
+        ProjectCloseRequest closeRequest = new ProjectCloseRequest();
+        closeRequest.setSowId(sowId);
+        closeRequest.setRequestedByUserId(currentUser.getId());
+        closeRequest.setStatus(ProjectCloseRequest.ProjectCloseRequestStatus.Pending);
+        closeRequest.setMessage(request.getMessage());
+        closeRequest.setLinks(request.getLinks());
+        
+        // Save
+        closeRequest = projectCloseRequestRepository.save(closeRequest);
+        
+        // Create audit log
+        createHistoryEntry(sowId, "CloseRequestCreated", 
+            "Project close request created by " + currentUser.getFullName() + ".", 
+            null, null, currentUser.getId());
+        
+        // Convert to DTO
+        ProjectCloseRequestDetailDTO dto = convertToDetailDTO(closeRequest);
+        
+        return new ProjectCloseRequestResponse(true, "Project close request created successfully", dto);
     }
     
     /**
@@ -101,6 +145,113 @@ public class ProjectCloseRequestService {
         }
         
         return convertToDetailDTO(closeRequestOpt.get());
+    }
+    
+    /**
+     * Approve a Close Request (Client action)
+     */
+    public ProjectCloseRequestResponse approveCloseRequest(Integer closeRequestId, User currentUser) {
+        // Validate user role
+        if (!"CLIENT".equals(currentUser.getRole())) {
+            throw new RuntimeException("Only clients can approve close requests.");
+        }
+        
+        // Get close request
+        ProjectCloseRequest closeRequest = projectCloseRequestRepository.findById(closeRequestId)
+            .orElseThrow(() -> new RuntimeException("Close request not found"));
+        
+        // Validate status
+        if (closeRequest.getStatus() != ProjectCloseRequest.ProjectCloseRequestStatus.Pending) {
+            throw new RuntimeException("This close request cannot be approved. Current status: " + closeRequest.getStatus());
+        }
+        
+        // Get SOW
+        SOWContract sow = sowContractRepository.findById(closeRequest.getSowId())
+            .orElseThrow(() -> new RuntimeException("SOW Contract not found"));
+        
+        // Validate ownership
+        if (!sow.getClientId().equals(currentUser.getId())) {
+            throw new RuntimeException("You do not have permission to review this close request.");
+        }
+        
+        // Update close request status
+        closeRequest.setStatus(ProjectCloseRequest.ProjectCloseRequestStatus.ClientApproved);
+        closeRequest = projectCloseRequestRepository.save(closeRequest);
+        
+        // Update SOW status to Completed
+        sow.setStatus(SOWContract.SOWContractStatus.Completed);
+        sow = sowContractRepository.save(sow);
+        
+        // Create audit log
+        createHistoryEntry(sow.getId(), "CloseRequestApprovedByClient", 
+            "Project close request approved by client. SOW marked as completed.", 
+            null, null, currentUser.getId());
+        
+        // Convert to DTO
+        ProjectCloseRequestDetailDTO dto = convertToDetailDTO(closeRequest);
+        dto.setSowStatus("Completed");
+        
+        return new ProjectCloseRequestResponse(true, 
+            "Project close request approved. SOW has been marked as completed.", dto);
+    }
+    
+    /**
+     * Reject a Close Request (Client action)
+     */
+    public ProjectCloseRequestResponse rejectCloseRequest(
+        Integer closeRequestId, 
+        RejectProjectCloseRequestRequest request, 
+        User currentUser
+    ) {
+        // Validate user role
+        if (!"CLIENT".equals(currentUser.getRole())) {
+            throw new RuntimeException("Only clients can reject close requests.");
+        }
+        
+        // Validate reason
+        if (request.getReason() == null || request.getReason().trim().isEmpty()) {
+            throw new RuntimeException("Rejection reason is required.");
+        }
+        if (request.getReason().length() > 2000) {
+            throw new RuntimeException("Rejection reason must not exceed 2000 characters.");
+        }
+        
+        // Get close request
+        ProjectCloseRequest closeRequest = projectCloseRequestRepository.findById(closeRequestId)
+            .orElseThrow(() -> new RuntimeException("Close request not found"));
+        
+        // Validate status
+        if (closeRequest.getStatus() != ProjectCloseRequest.ProjectCloseRequestStatus.Pending) {
+            throw new RuntimeException("This close request cannot be rejected. Current status: " + closeRequest.getStatus());
+        }
+        
+        // Get SOW
+        SOWContract sow = sowContractRepository.findById(closeRequest.getSowId())
+            .orElseThrow(() -> new RuntimeException("SOW Contract not found"));
+        
+        // Validate ownership
+        if (!sow.getClientId().equals(currentUser.getId())) {
+            throw new RuntimeException("You do not have permission to review this close request.");
+        }
+        
+        // Update close request
+        closeRequest.setStatus(ProjectCloseRequest.ProjectCloseRequestStatus.Rejected);
+        closeRequest.setClientRejectReason(request.getReason());
+        closeRequest = projectCloseRequestRepository.save(closeRequest);
+        
+        // SOW status remains Active (no change)
+        
+        // Create audit log
+        createHistoryEntry(sow.getId(), "CloseRequestRejectedByClient", 
+            "Project close request rejected by client. Reason: " + request.getReason(), 
+            null, null, currentUser.getId());
+        
+        // Convert to DTO
+        ProjectCloseRequestDetailDTO dto = convertToDetailDTO(closeRequest);
+        dto.setSowStatus("Active");
+        
+        return new ProjectCloseRequestResponse(true, 
+            "Project close request rejected. SOW remains active.", dto);
     }
     
     /**
@@ -160,6 +311,50 @@ public class ProjectCloseRequestService {
         
         return new ProjectCloseRequestResponse(true, 
             "Project close request resubmitted successfully", dto);
+    }
+    
+    /**
+     * Convert ProjectCloseRequest entity to DetailDTO
+     */
+    private ProjectCloseRequestDetailDTO convertToDetailDTO(ProjectCloseRequest closeRequest) {
+        ProjectCloseRequestDetailDTO dto = new ProjectCloseRequestDetailDTO();
+        dto.setId(closeRequest.getId());
+        dto.setSowId(closeRequest.getSowId());
+        dto.setStatus(closeRequest.getStatus().name());
+        dto.setMessage(closeRequest.getMessage());
+        dto.setLinks(closeRequest.getLinks());
+        dto.setClientRejectReason(closeRequest.getClientRejectReason());
+        dto.setCreatedAt(closeRequest.getCreatedAt());
+        dto.setUpdatedAt(closeRequest.getUpdatedAt());
+        
+        // Load SOW information
+        SOWContract sow = sowContractRepository.findById(closeRequest.getSowId())
+            .orElse(null);
+        if (sow != null) {
+            dto.setSowContractName(sow.getContractName());
+            dto.setSowStatus(sow.getStatus().name());
+            // Format period
+            if (sow.getPeriodStart() != null && sow.getPeriodEnd() != null) {
+                dto.setSowPeriod(String.format("%s-%s", 
+                    sow.getPeriodStart().toString().replace("-", "/"),
+                    sow.getPeriodEnd().toString().replace("-", "/")));
+            }
+        }
+        
+        // Load requester information
+        User requester = userRepository.findById(closeRequest.getRequestedByUserId())
+            .orElse(null);
+        if (requester != null) {
+            ProjectCloseRequestDetailDTO.UserInfoDTO userInfo = 
+                new ProjectCloseRequestDetailDTO.UserInfoDTO(
+                    requester.getId(),
+                    requester.getFullName(),
+                    requester.getEmail()
+                );
+            dto.setRequestedBy(userInfo);
+        }
+        
+        return dto;
     }
     
     /**
