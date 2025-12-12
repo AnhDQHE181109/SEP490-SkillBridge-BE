@@ -148,6 +148,113 @@ public class ProjectCloseRequestService {
     }
     
     /**
+     * Approve a Close Request (Client action)
+     */
+    public ProjectCloseRequestResponse approveCloseRequest(Integer closeRequestId, User currentUser) {
+        // Validate user role
+        if (!"CLIENT".equals(currentUser.getRole())) {
+            throw new RuntimeException("Only clients can approve close requests.");
+        }
+        
+        // Get close request
+        ProjectCloseRequest closeRequest = projectCloseRequestRepository.findById(closeRequestId)
+            .orElseThrow(() -> new RuntimeException("Close request not found"));
+        
+        // Validate status
+        if (closeRequest.getStatus() != ProjectCloseRequest.ProjectCloseRequestStatus.Pending) {
+            throw new RuntimeException("This close request cannot be approved. Current status: " + closeRequest.getStatus());
+        }
+        
+        // Get SOW
+        SOWContract sow = sowContractRepository.findById(closeRequest.getSowId())
+            .orElseThrow(() -> new RuntimeException("SOW Contract not found"));
+        
+        // Validate ownership
+        if (!sow.getClientId().equals(currentUser.getId())) {
+            throw new RuntimeException("You do not have permission to review this close request.");
+        }
+        
+        // Update close request status
+        closeRequest.setStatus(ProjectCloseRequest.ProjectCloseRequestStatus.ClientApproved);
+        closeRequest = projectCloseRequestRepository.save(closeRequest);
+        
+        // Update SOW status to Completed
+        sow.setStatus(SOWContract.SOWContractStatus.Completed);
+        sow = sowContractRepository.save(sow);
+        
+        // Create audit log
+        createHistoryEntry(sow.getId(), "CloseRequestApprovedByClient", 
+            "Project close request approved by client. SOW marked as completed.", 
+            null, null, currentUser.getId());
+        
+        // Convert to DTO
+        ProjectCloseRequestDetailDTO dto = convertToDetailDTO(closeRequest);
+        dto.setSowStatus("Completed");
+        
+        return new ProjectCloseRequestResponse(true, 
+            "Project close request approved. SOW has been marked as completed.", dto);
+    }
+    
+    /**
+     * Reject a Close Request (Client action)
+     */
+    public ProjectCloseRequestResponse rejectCloseRequest(
+        Integer closeRequestId, 
+        RejectProjectCloseRequestRequest request, 
+        User currentUser
+    ) {
+        // Validate user role
+        if (!"CLIENT".equals(currentUser.getRole())) {
+            throw new RuntimeException("Only clients can reject close requests.");
+        }
+        
+        // Validate reason
+        if (request.getReason() == null || request.getReason().trim().isEmpty()) {
+            throw new RuntimeException("Rejection reason is required.");
+        }
+        if (request.getReason().length() > 2000) {
+            throw new RuntimeException("Rejection reason must not exceed 2000 characters.");
+        }
+        
+        // Get close request
+        ProjectCloseRequest closeRequest = projectCloseRequestRepository.findById(closeRequestId)
+            .orElseThrow(() -> new RuntimeException("Close request not found"));
+        
+        // Validate status
+        if (closeRequest.getStatus() != ProjectCloseRequest.ProjectCloseRequestStatus.Pending) {
+            throw new RuntimeException("This close request cannot be rejected. Current status: " + closeRequest.getStatus());
+        }
+        
+        // Get SOW
+        SOWContract sow = sowContractRepository.findById(closeRequest.getSowId())
+            .orElseThrow(() -> new RuntimeException("SOW Contract not found"));
+        
+        // Validate ownership
+        if (!sow.getClientId().equals(currentUser.getId())) {
+            throw new RuntimeException("You do not have permission to review this close request.");
+        }
+        
+        // Update close request
+        closeRequest.setStatus(ProjectCloseRequest.ProjectCloseRequestStatus.Rejected);
+        closeRequest.setClientRejectReason(request.getReason());
+        closeRequest = projectCloseRequestRepository.save(closeRequest);
+        
+        // SOW status remains Active (no change)
+        
+        // Create audit log
+        createHistoryEntry(sow.getId(), "CloseRequestRejectedByClient", 
+            "Project close request rejected by client. Reason: " + request.getReason(), 
+            null, null, currentUser.getId());
+        
+        // Convert to DTO
+        ProjectCloseRequestDetailDTO dto = convertToDetailDTO(closeRequest);
+        dto.setSowStatus("Active");
+        
+        return new ProjectCloseRequestResponse(true, 
+            "Project close request rejected. SOW remains active.", dto);
+    }
+    
+    /**
      * Resubmit a rejected Close Request (SalesRep action)
      */
     public ProjectCloseRequestResponse resubmitCloseRequest(

@@ -1,6 +1,9 @@
 package com.skillbridge.controller;
 
+import com.skillbridge.dto.contract.request.ApproveProjectCloseRequestRequest;
+import com.skillbridge.dto.contract.request.RejectProjectCloseRequestRequest;
 import com.skillbridge.dto.contract.response.ProjectCloseRequestDetailDTO;
+import com.skillbridge.dto.contract.response.ProjectCloseRequestResponse;
 import com.skillbridge.entity.auth.User;
 import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.service.contract.ProjectCloseRequestService;
@@ -72,6 +75,84 @@ public class ClientProjectCloseRequestController {
             logger.error("Error getting latest close request", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body("Failed to get close request: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Approve a Close Request
+     * POST /client/close-requests/{id}/approve
+     */
+    @PostMapping("/close-requests/{id}/approve")
+    public ResponseEntity<?> approveCloseRequest(
+        @PathVariable("id") Integer closeRequestId,
+        @RequestBody(required = false) ApproveProjectCloseRequestRequest request,
+        Authentication authentication,
+        HttpServletRequest httpRequest
+    ) {
+        try {
+            User currentUser = getCurrentUser(authentication, httpRequest);
+            
+            if (currentUser == null) {
+                logger.warn("Unauthorized access attempt to POST /client/close-requests/{}/approve", closeRequestId);
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body("Authentication required");
+            }
+            
+            // Create request if not provided
+            if (request == null) {
+                request = new ApproveProjectCloseRequestRequest();
+                request.setConfirm(true);
+            }
+            
+            ProjectCloseRequestResponse response = projectCloseRequestService.approveCloseRequest(
+                closeRequestId, currentUser
+            );
+            
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            logger.error("Error approving close request", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Error approving close request", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body("Failed to approve close request: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Reject a Close Request
+     * POST /client/close-requests/{id}/reject
+     */
+    @PostMapping("/close-requests/{id}/reject")
+    public ResponseEntity<?> rejectCloseRequest(
+        @PathVariable("id") Integer closeRequestId,
+        @RequestBody RejectProjectCloseRequestRequest request,
+        Authentication authentication,
+        HttpServletRequest httpRequest
+    ) {
+        try {
+            User currentUser = getCurrentUser(authentication, httpRequest);
+            
+            if (currentUser == null) {
+                logger.warn("Unauthorized access attempt to POST /client/close-requests/{}/reject", closeRequestId);
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body("Authentication required");
+            }
+            
+            ProjectCloseRequestResponse response = projectCloseRequestService.rejectCloseRequest(
+                closeRequestId, request, currentUser
+            );
+            
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            logger.error("Error rejecting close request", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body("Error: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Error rejecting close request", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body("Failed to reject close request: " + e.getMessage());
         }
     }
     
