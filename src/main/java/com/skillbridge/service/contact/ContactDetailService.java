@@ -137,11 +137,149 @@ public class ContactDetailService {
         dto.setOnlineMtgLink(contact.getOnlineMtgLink());
         dto.setStatus(contact.getStatus() != null ? contact.getStatus() : "New");
         
-        // Set proposal link and status from proposal entity (if exists)
-        // Otherwise fallback to contact entity fields (for backward compatibility)
-        if (proposal != null) {
-            dto.setProposalLink(proposal.getLink());
-            dto.setProposalStatus(mapProposalStatusToFrontend(proposal.getStatus()));
+        // Convert all proposals to DTOs and set in response
+        List<ContactProposalDTO> proposalDTOs = new ArrayList<>();
+        for (Proposal p : allProposals) {
+            ContactProposalDTO proposalDTO = new ContactProposalDTO();
+            proposalDTO.setId(p.getId());
+            proposalDTO.setVersion(p.getVersion());
+            proposalDTO.setTitle(p.getTitle());
+            proposalDTO.setStatus(p.getStatus()); // Keep backend status
+            proposalDTO.setProposalLink(p.getLink());
+            proposalDTO.setIsCurrent(Boolean.TRUE.equals(p.getIsCurrent()));
+            proposalDTO.setClientFeedback(p.getClientFeedback());
+            
+            if (p.getCreatedAt() != null) {
+                proposalDTO.setCreatedAt(p.getCreatedAt().format(DATE_TIME_FORMATTER));
+            }
+            
+            if ("approved".equalsIgnoreCase(p.getStatus()) && p.getUpdatedAt() != null) {
+                proposalDTO.setProposalApprovedAt(p.getUpdatedAt().format(DATE_TIME_FORMATTER));
+            }
+            
+            // Parse attachments_manifest JSON
+            List<ContactProposalDTO.AttachmentDTO> attachments = new ArrayList<>();
+            if (p.getAttachmentsManifest() != null && !p.getAttachmentsManifest().isEmpty()) {
+                try {
+                    // Try to parse as List<AttachmentInfo> (new format with fileName)
+                    Type attachmentInfoListType = new TypeToken<List<AttachmentInfo>>(){}.getType();
+                    List<AttachmentInfo> attachmentInfos = gson.fromJson(p.getAttachmentsManifest(), attachmentInfoListType);
+                    if (attachmentInfos != null && !attachmentInfos.isEmpty()) {
+                        for (AttachmentInfo info : attachmentInfos) {
+                            attachments.add(new ContactProposalDTO.AttachmentDTO(info.getS3Key(), info.getFileName(), null));
+                        }
+                    } else {
+                        // Fallback: try to parse as List<String> (old format)
+                        Type stringListType = new TypeToken<List<String>>(){}.getType();
+                        List<String> attachmentLinks = gson.fromJson(p.getAttachmentsManifest(), stringListType);
+                        if (attachmentLinks != null) {
+                            for (String s3Key : attachmentLinks) {
+                                String fileName = s3Key;
+                                if (fileName.contains("/")) {
+                                    fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                                }
+                                attachments.add(new ContactProposalDTO.AttachmentDTO(s3Key, fileName, null));
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    // If parsing as AttachmentInfo fails, try List<String> (old format)
+                    try {
+                        Type stringListType = new TypeToken<List<String>>(){}.getType();
+                        List<String> attachmentLinks = gson.fromJson(p.getAttachmentsManifest(), stringListType);
+                        if (attachmentLinks != null) {
+                            for (String s3Key : attachmentLinks) {
+                                String fileName = s3Key;
+                                if (fileName.contains("/")) {
+                                    fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                                }
+                                attachments.add(new ContactProposalDTO.AttachmentDTO(s3Key, fileName, null));
+                            }
+                        }
+                    } catch (Exception e2) {
+                        // If both fail, use link as single attachment
+                        if (p.getLink() != null) {
+                            String fileName = p.getLink();
+                            if (fileName.contains("/")) {
+                                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                            }
+                            attachments.add(new ContactProposalDTO.AttachmentDTO(p.getLink(), fileName, null));
+                        }
+                    }
+                }
+            } else if (p.getLink() != null) {
+                // If no manifest but has link, use link as single attachment
+                String fileName = p.getLink();
+                if (fileName.contains("/")) {
+                    fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+                }
+                attachments.add(new ContactProposalDTO.AttachmentDTO(p.getLink(), fileName, null));
+            }
+            proposalDTO.setAttachments(attachments);
+            
+            proposalDTOs.add(proposalDTO);
+        }
+        
+        // Sort proposals: newest first (by createdAt DESC)
+        proposalDTOs.sort((p1, p2) -> {
+            if (p1.getCreatedAt() == null && p2.getCreatedAt() == null) return 0;
+            if (p1.getCreatedAt() == null) return 1;
+            if (p2.getCreatedAt() == null) return -1;
+            return p2.getCreatedAt().compareTo(p1.getCreatedAt());
+        });
+        
+        dto.setProposals(proposalDTOs);
+        
+        // Set proposal link and status from the most recent reviewable proposal (for backward compatibility)
+        // Priority: sent_to_client > approved > revision_requested
+        Proposal displayProposal = null;
+        if (!allProposals.isEmpty()) {
+            List<Proposal> sentToClient = allProposals.stream()
+                .filter(p -> "sent_to_client".equals(p.getStatus()))
+                .sorted((p1, p2) -> {
+                    if (p1.getCreatedAt() == null && p2.getCreatedAt() == null) return 0;
+                    if (p1.getCreatedAt() == null) return 1;
+                    if (p2.getCreatedAt() == null) return -1;
+                    return p2.getCreatedAt().compareTo(p1.getCreatedAt());
+                })
+                .collect(Collectors.toList());
+            
+            if (!sentToClient.isEmpty()) {
+                displayProposal = sentToClient.get(0);
+            } else {
+                List<Proposal> approved = allProposals.stream()
+                    .filter(p -> "approved".equals(p.getStatus()))
+                    .sorted((p1, p2) -> {
+                        if (p1.getCreatedAt() == null && p2.getCreatedAt() == null) return 0;
+                        if (p1.getCreatedAt() == null) return 1;
+                        if (p2.getCreatedAt() == null) return -1;
+                        return p2.getCreatedAt().compareTo(p1.getCreatedAt());
+                    })
+                    .collect(Collectors.toList());
+                
+                if (!approved.isEmpty()) {
+                    displayProposal = approved.get(0);
+                } else {
+                    List<Proposal> revisionRequested = allProposals.stream()
+                        .filter(p -> "revision_requested".equals(p.getStatus()))
+                        .sorted((p1, p2) -> {
+                            if (p1.getCreatedAt() == null && p2.getCreatedAt() == null) return 0;
+                            if (p1.getCreatedAt() == null) return 1;
+                            if (p2.getCreatedAt() == null) return -1;
+                            return p2.getCreatedAt().compareTo(p1.getCreatedAt());
+                        })
+                        .collect(Collectors.toList());
+                    
+                    if (!revisionRequested.isEmpty()) {
+                        displayProposal = revisionRequested.get(0);
+                    }
+                }
+            }
+        }
+        
+        if (displayProposal != null) {
+            dto.setProposalLink(displayProposal.getLink());
+            dto.setProposalStatus(mapProposalStatusToFrontend(displayProposal.getStatus()));
             
             // Set approved time if proposal is approved
             if ("approved".equalsIgnoreCase(displayProposal.getStatus()) && displayProposal.getUpdatedAt() != null) {

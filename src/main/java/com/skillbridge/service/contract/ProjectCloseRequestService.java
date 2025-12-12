@@ -30,6 +30,9 @@ public class ProjectCloseRequestService {
     private SOWContractRepository sowContractRepository;
     
     @Autowired
+    private UserRepository userRepository;
+    
+    @Autowired
     private ContractHistoryRepository contractHistoryRepository;
     
     /**
@@ -63,6 +66,47 @@ public class ProjectCloseRequestService {
         if (hasPending) {
             throw new RuntimeException("A pending close request already exists for this SOW. Please wait for client response or resubmit the existing request.");
         }
+    }
+    
+    /**
+     * Create a new Project Close Request
+     */
+    public ProjectCloseRequestResponse createCloseRequest(
+        Integer sowId, 
+        CreateProjectCloseRequestRequest request, 
+        User currentUser
+    ) {
+        // Validate
+        validateCanCreateCloseRequest(sowId, currentUser);
+        
+        // Validate message and links length
+        if (request.getMessage() != null && request.getMessage().length() > 5000) {
+            throw new RuntimeException("Message must not exceed 5000 characters.");
+        }
+        if (request.getLinks() != null && request.getLinks().length() > 2000) {
+            throw new RuntimeException("Links must not exceed 2000 characters.");
+        }
+        
+        // Create entity
+        ProjectCloseRequest closeRequest = new ProjectCloseRequest();
+        closeRequest.setSowId(sowId);
+        closeRequest.setRequestedByUserId(currentUser.getId());
+        closeRequest.setStatus(ProjectCloseRequest.ProjectCloseRequestStatus.Pending);
+        closeRequest.setMessage(request.getMessage());
+        closeRequest.setLinks(request.getLinks());
+        
+        // Save
+        closeRequest = projectCloseRequestRepository.save(closeRequest);
+        
+        // Create audit log
+        createHistoryEntry(sowId, "CloseRequestCreated", 
+            "Project close request created by " + currentUser.getFullName() + ".", 
+            null, null, currentUser.getId());
+        
+        // Convert to DTO
+        ProjectCloseRequestDetailDTO dto = convertToDetailDTO(closeRequest);
+        
+        return new ProjectCloseRequestResponse(true, "Project close request created successfully", dto);
     }
     
     /**

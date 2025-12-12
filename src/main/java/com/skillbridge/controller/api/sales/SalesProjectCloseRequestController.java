@@ -1,7 +1,6 @@
 package com.skillbridge.controller.api.sales;
 
 import com.skillbridge.dto.contract.request.CreateProjectCloseRequestRequest;
-import com.skillbridge.dto.contract.request.ResubmitProjectCloseRequestRequest;
 import com.skillbridge.dto.contract.response.ProjectCloseRequestResponse;
 import com.skillbridge.entity.auth.User;
 import com.skillbridge.repository.auth.UserRepository;
@@ -27,6 +26,12 @@ public class SalesProjectCloseRequestController {
 
     @Autowired
     private ProjectCloseRequestService projectCloseRequestService;
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Autowired
+    private JwtTokenProvider jwtTokenProvider;
 
     /**
      * Create a new Project Close Request
@@ -59,6 +64,73 @@ public class SalesProjectCloseRequestController {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(new ErrorResponse("Internal server error: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Get current user from authentication or JWT token
+     */
+    private User getCurrentUser(Authentication authentication, HttpServletRequest request) {
+        // Try to get from authentication first
+        if (authentication != null && authentication.getPrincipal() != null) {
+            try {
+                String principal = authentication.getPrincipal().toString();
+
+                // If principal is email, find user by email
+                if (principal.contains("@")) {
+                    return userRepository.findByEmail(principal).orElse(null);
+                }
+
+                // Otherwise, try to parse as user ID
+                try {
+                    Integer userId = Integer.parseInt(principal);
+                    return userRepository.findById(userId).orElse(null);
+                } catch (NumberFormatException e) {
+                    // If not a number, try to find by email
+                    return userRepository.findByEmail(principal).orElse(null);
+                }
+            } catch (Exception e) {
+                // Continue to try token
+            }
+        }
+
+        // Fallback: try to get from JWT token in Authorization header
+        try {
+            String authHeader = request.getHeader("Authorization");
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                String token = authHeader.substring(7);
+
+                // Validate and extract user info from token
+                if (!jwtTokenProvider.isTokenExpired(token)) {
+                    String email = jwtTokenProvider.getUsernameFromToken(token);
+                    if (email != null) {
+                        return userRepository.findByEmail(email).orElse(null);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Token parsing failed, return null
+        }
+
+        return null;
+    }
+
+    /**
+     * Error response class
+     */
+    public static class ErrorResponse {
+        private String message;
+
+        public ErrorResponse(String message) {
+            this.message = message;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public void setMessage(String message) {
+            this.message = message;
         }
     }
 }

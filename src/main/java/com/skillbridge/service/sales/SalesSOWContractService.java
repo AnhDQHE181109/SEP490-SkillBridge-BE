@@ -355,6 +355,137 @@ public class SalesSOWContractService {
     }
     
     /**
+     * Helper to compare nullable objects with equals
+     */
+    private boolean equalsNullable(Object a, Object b) {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        return a.equals(b);
+    }
+
+    /**
+     * Helper: parse engineer level string into level/role
+     */
+    private java.util.Map<String, String> parseLevelRole(String engineerLevel) {
+        java.util.Map<String, String> result = new java.util.HashMap<>();
+        if (engineerLevel == null || engineerLevel.trim().isEmpty()) {
+            result.put("level", "");
+            result.put("role", "");
+            return result;
+        }
+        String[] parts = engineerLevel.trim().split("\\s+", 2);
+        if (parts.length >= 2) {
+            result.put("level", parts[0]);
+            result.put("role", parts[1]);
+        } else {
+            result.put("level", engineerLevel.trim());
+            result.put("role", "");
+        }
+        return result;
+    }
+
+    /**
+     * Check if CR engineer matches existing baseline/legacy (unchanged auto-fill)
+     */
+    private boolean isSameAsExistingEng(
+        CreateChangeRequestRequest.EngagedEngineerDTO dto,
+        List<SOWEngagedEngineerBase> baselineEngs,
+        List<SOWEngagedEngineer> legacyEngs,
+        LocalDate effectiveStart
+    ) {
+        // Prefer level and role from DTO if available, otherwise parse from engineerLevel
+        String crLevel = (dto.getLevel() != null && !dto.getLevel().trim().isEmpty()) 
+            ? dto.getLevel().trim() 
+            : parseLevelRole(dto.getEngineerLevel()).get("level");
+        String crRole = (dto.getRole() != null && !dto.getRole().trim().isEmpty()) 
+            ? dto.getRole().trim() 
+            : parseLevelRole(dto.getEngineerLevel()).get("role");
+
+        // Normalize dto values; if missing, allow fallback to existing values to detect unchanged auto-fill
+        LocalDate dtoStart = null;
+        LocalDate dtoEnd = null;
+        if (dto.getStartDate() != null && !dto.getStartDate().trim().isEmpty()) {
+            dtoStart = LocalDate.parse(dto.getStartDate());
+        } else {
+            dtoStart = effectiveStart; // fallback
+        }
+        if (dto.getEndDate() != null && !dto.getEndDate().trim().isEmpty()) {
+            dtoEnd = LocalDate.parse(dto.getEndDate());
+        }
+
+        BigDecimal dtoRating = dto.getRating() != null ? BigDecimal.valueOf(dto.getRating()) : null;
+        BigDecimal dtoSalary = dto.getSalary() != null ? BigDecimal.valueOf(dto.getSalary()) : null;
+
+        // If baseEngineerId is provided, prioritize matching with that specific baseline engineer
+        if (dto.getBaseEngineerId() != null) {
+            for (SOWEngagedEngineerBase base : baselineEngs) {
+                if (base.getId() != null && base.getId().equals(dto.getBaseEngineerId())) {
+                    // Found the matching baseline engineer, compare all fields directly
+                    // Use DTO values directly, don't fallback to baseline values for comparison
+                    boolean levelSame = equalsNullable(base.getLevel(), crLevel);
+                    boolean roleSame = equalsNullable(base.getRole(), crRole);
+                    boolean startSame = equalsNullable(base.getStartDate(), dtoStart);
+                    boolean endSame = equalsNullable(base.getEndDate(), dtoEnd);
+                    boolean ratingSame = equalsNullable(base.getRating(), dtoRating);
+                    boolean salarySame = equalsNullable(base.getUnitRate(), dtoSalary);
+                    if (levelSame && roleSame && startSame && endSame && ratingSame && salarySame) {
+                        return true; // Identical to baseline, skip saving
+                    }
+                    // If baseEngineerId matches but fields differ, this is a modification - don't skip
+                    break;
+                }
+            }
+        }
+
+        // Compare with all baseline engineers (fallback if baseEngineerId not provided or no match)
+        for (SOWEngagedEngineerBase base : baselineEngs) {
+            // Skip if we already checked this one via baseEngineerId
+            if (dto.getBaseEngineerId() != null && base.getId() != null && base.getId().equals(dto.getBaseEngineerId())) {
+                continue;
+            }
+            LocalDate cmpStart = dtoStart != null ? dtoStart : base.getStartDate();
+            LocalDate cmpEnd = dtoEnd != null ? dtoEnd : base.getEndDate();
+            BigDecimal cmpRating = dtoRating != null ? dtoRating : base.getRating();
+            BigDecimal cmpSalary = dtoSalary != null ? dtoSalary : base.getUnitRate();
+            String cmpLevel = !crLevel.isEmpty() ? crLevel : base.getLevel();
+            String cmpRole = !crRole.isEmpty() ? crRole : base.getRole();
+
+            boolean levelSame = equalsNullable(base.getLevel(), cmpLevel);
+            boolean roleSame = equalsNullable(base.getRole(), cmpRole);
+            boolean startSame = equalsNullable(base.getStartDate(), cmpStart);
+            boolean endSame = equalsNullable(base.getEndDate(), cmpEnd);
+            boolean ratingSame = equalsNullable(base.getRating(), cmpRating);
+            boolean salarySame = equalsNullable(base.getUnitRate(), cmpSalary);
+            if (levelSame && roleSame && startSame && endSame && ratingSame && salarySame) {
+                return true;
+            }
+        }
+
+        // Compare with legacy current engineers
+        for (SOWEngagedEngineer eng : legacyEngs) {
+            java.util.Map<String, String> parsedLegacy = parseLevelRole(eng.getEngineerLevel());
+            LocalDate cmpStart = dtoStart != null ? dtoStart : eng.getStartDate();
+            LocalDate cmpEnd = dtoEnd != null ? dtoEnd : eng.getEndDate();
+            BigDecimal cmpRating = dtoRating != null ? dtoRating : eng.getRating();
+            BigDecimal cmpSalary = dtoSalary != null ? dtoSalary : eng.getSalary();
+            String cmpLevel = !crLevel.isEmpty() ? crLevel : parsedLegacy.get("level");
+            String cmpRole = !crRole.isEmpty() ? crRole : parsedLegacy.get("role");
+
+            boolean levelSame = equalsNullable(parsedLegacy.get("level"), cmpLevel);
+            boolean roleSame = equalsNullable(parsedLegacy.get("role"), cmpRole);
+            boolean startSame = equalsNullable(eng.getStartDate(), cmpStart);
+            boolean endSame = equalsNullable(eng.getEndDate(), cmpEnd);
+            boolean ratingSame = equalsNullable(eng.getRating(), cmpRating);
+            boolean salarySame = equalsNullable(eng.getSalary(), cmpSalary);
+            if (levelSame && roleSame && startSame && endSame && ratingSame && salarySame) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+    
+    /**
      * Update SOW contract (for Request_for_Change status only - allows updating Engaged Engineers and Billing Details)
      */
     @Transactional
@@ -420,9 +551,56 @@ public class SalesSOWContractService {
                 null, null, currentUser.getId());
         } else {
             // For Draft status, allow full update (similar to create but update existing)
-            // This is similar to updateMSAContract logic
-            // For now, we'll focus on Request_for_Change update only
-            throw new RuntimeException("Full update for Draft status is not yet implemented. Please use create endpoint for new contracts.");
+            // Update basic contract fields
+            if (request.getProjectName() != null) {
+                contract.setProjectName(request.getProjectName());
+                contract.setContractName("SOW Contract - " + contract.getProjectName());
+            }
+            if (request.getEffectiveStart() != null && !request.getEffectiveStart().trim().isEmpty()) {
+                contract.setPeriodStart(LocalDate.parse(request.getEffectiveStart()));
+            }
+            if (request.getEffectiveEnd() != null && !request.getEffectiveEnd().trim().isEmpty()) {
+                contract.setPeriodEnd(LocalDate.parse(request.getEffectiveEnd()));
+            }
+            if (request.getScopeSummary() != null) {
+                contract.setScopeSummary(request.getScopeSummary());
+            }
+            if (request.getAssigneeUserId() != null) {
+                User assignee = userRepository.findById(request.getAssigneeUserId())
+                    .orElseThrow(() -> new RuntimeException("Assignee not found"));
+                contract.setAssigneeUserId(request.getAssigneeUserId());
+                contract.setLandbridgeContactName(assignee.getFullName());
+                contract.setLandbridgeContactEmail(assignee.getEmail());
+            }
+            
+            // Update Engaged Engineers if provided (for Retainer)
+            if (request.getEngagedEngineers() != null && !request.getEngagedEngineers().isEmpty() && "Retainer".equals(contract.getEngagementType())) {
+                // Delete all existing engaged engineers
+                List<SOWEngagedEngineer> existingEngineers = sowEngagedEngineerRepository.findBySowContractId(contractId);
+                for (SOWEngagedEngineer existing : existingEngineers) {
+                    sowEngagedEngineerRepository.delete(existing);
+                }
+                // Create new engaged engineers from request
+                createSOWEngagedEngineers(contractId, request.getEngagedEngineers());
+            }
+            
+            // Update Billing Details if provided (for Retainer)
+            if (request.getBillingDetails() != null && !request.getBillingDetails().isEmpty() && "Retainer".equals(contract.getEngagementType())) {
+                // Delete all existing billing details
+                List<RetainerBillingDetail> existingBilling = retainerBillingDetailRepository.findBySowContractIdOrderByPaymentDateDesc(contractId);
+                for (RetainerBillingDetail existing : existingBilling) {
+                    retainerBillingDetailRepository.delete(existing);
+                }
+                // Create new billing details from request
+                createRetainerBillingDetails(contractId, request.getBillingDetails());
+            }
+            
+            contract = sowContractRepository.save(contract);
+            
+            // Create history entry
+            createHistoryEntry(contract.getId(), "UPDATED", 
+                "SOW Contract updated by " + currentUser.getFullName(), 
+                null, null, currentUser.getId());
         }
         
         // Upload new attachments if any
@@ -811,6 +989,25 @@ public class SalesSOWContractService {
                     dto.setDeliveryNote(description);
                     dto.setIsPaid(false); // Event-based billing details don't have payment status
                     billingDetails.add(dto);
+                }
+
+                // Fallback: if for any reason current resources list is empty, use legacy table
+                if (engagedEngineers.isEmpty()) {
+                    List<SOWEngagedEngineer> engineers = sowEngagedEngineerRepository.findBySowContractId(contractId);
+                    for (SOWEngagedEngineer engineer : engineers) {
+                        SOWContractDetailDTO.EngagedEngineerDTO dto = new SOWContractDetailDTO.EngagedEngineerDTO();
+                        dto.setId(engineer.getId());
+                        dto.setEngineerLevel(engineer.getEngineerLevel());
+                        dto.setStartDate(engineer.getStartDate() != null ? engineer.getStartDate().toString() : null);
+                        dto.setEndDate(engineer.getEndDate() != null ? engineer.getEndDate().toString() : null);
+                        dto.setBillingType(engineer.getBillingType() != null ? engineer.getBillingType() : "Monthly");
+                        dto.setHourlyRate(engineer.getHourlyRate() != null ? engineer.getHourlyRate().doubleValue() : null);
+                        dto.setHours(engineer.getHours() != null ? engineer.getHours().doubleValue() : null);
+                        dto.setSubtotal(engineer.getSubtotal() != null ? engineer.getSubtotal().doubleValue() : null);
+                        dto.setRating(engineer.getRating() != null ? engineer.getRating().doubleValue() : null);
+                        dto.setSalary(engineer.getSalary() != null ? engineer.getSalary().doubleValue() : null);
+                        engagedEngineers.add(dto);
+                    }
                 }
             } else {
                 // Fallback to old approach (for contracts that haven't been migrated to event-based)
@@ -2591,7 +2788,6 @@ public class SalesSOWContractService {
             if (!matchedById && !baselineEngineers.isEmpty() && !crLevel.isEmpty() && !crRole.isEmpty()) {
                 matchingBaseEng = baselineEngineers.stream()
                     .filter(base -> {
-                        // Compare level and role (case-insensitive, partial match)
                         boolean levelMatch = base.getLevel() != null && 
                             base.getLevel().equalsIgnoreCase(crLevel);
                         boolean roleMatch = base.getRole() != null && 
