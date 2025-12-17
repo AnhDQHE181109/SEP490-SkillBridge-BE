@@ -30,9 +30,11 @@ public interface CRResourceEventRepository extends JpaRepository<CRResourceEvent
      * @return List of resource events
      */
     @Query("SELECT e FROM CRResourceEvent e " +
-           "INNER JOIN ChangeRequest cr ON e.changeRequestId = cr.id " +
-           "WHERE cr.sowContractId = :sowContractId " +
-           "AND cr.status IN ('APPROVED', 'Active') " +
+           "WHERE e.changeRequestId IN (" +
+           "  SELECT cr.id FROM ChangeRequest cr " +
+           "  WHERE cr.sowContractId = :sowContractId " +
+           "  AND UPPER(cr.status) IN ('APPROVED', 'ACTIVE')" +
+           ") " +
            "AND e.effectiveStart <= :asOfDate " +
            "ORDER BY e.effectiveStart ASC, e.createdAt ASC")
     List<CRResourceEvent> findApprovedEventsUpToDate(@Param("sowContractId") Integer sowContractId, 
@@ -44,10 +46,25 @@ public interface CRResourceEventRepository extends JpaRepository<CRResourceEvent
      * @return List of resource events
      */
     @Query("SELECT e FROM CRResourceEvent e " +
-           "INNER JOIN ChangeRequest cr ON e.changeRequestId = cr.id " +
-           "WHERE cr.sowContractId = :sowContractId " +
-           "AND cr.status IN ('APPROVED', 'Active') " +
+           "WHERE e.changeRequestId IN (" +
+           "  SELECT cr.id FROM ChangeRequest cr " +
+           "  WHERE cr.sowContractId = :sowContractId " +
+           "  AND UPPER(cr.status) IN ('APPROVED', 'ACTIVE')" +
+           ") " +
            "ORDER BY e.effectiveStart ASC, e.createdAt ASC")
     List<CRResourceEvent> findApprovedEventsBySowContractId(@Param("sowContractId") Integer sowContractId);
+    
+    /**
+     * Debug: Find all resource events for a SOW contract (without status filter)
+     * @param sowContractId SOW contract ID
+     * @return List of resource events
+     */
+    @Query("SELECT e FROM CRResourceEvent e " +
+           "WHERE e.changeRequestId IN (" +
+           "  SELECT cr.id FROM ChangeRequest cr " +
+           "  WHERE cr.sowContractId = :sowContractId" +
+           ") " +
+           "ORDER BY e.effectiveStart ASC, e.createdAt ASC")
+    List<CRResourceEvent> findAllEventsBySowContractId(@Param("sowContractId") Integer sowContractId);
 }
 

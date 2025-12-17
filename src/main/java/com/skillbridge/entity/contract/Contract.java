@@ -62,6 +62,9 @@ public class Contract {
     @Column(name = "tax_withholding", length = 16)
     private String taxWithholding;
 
+    @Column(name = "tax_type", length = 16)
+    private String taxType; // Included | Excluded
+
     // Legal / Compliance
     @Column(name = "ip_ownership", length = 128)
     private String ipOwnership;
@@ -223,6 +226,14 @@ public class Contract {
 
     public void setTaxWithholding(String taxWithholding) {
         this.taxWithholding = taxWithholding;
+    }
+
+    public String getTaxType() {
+        return taxType;
+    }
+
+    public void setTaxType(String taxType) {
+        this.taxType = taxType;
     }
 
     public String getIpOwnership() {

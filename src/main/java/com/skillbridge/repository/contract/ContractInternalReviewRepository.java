@@ -37,5 +37,15 @@ public interface ContractInternalReviewRepository extends JpaRepository<Contract
     List<ContractInternalReview> findBySowContractIdAndContractTypeOrderByReviewedAtDesc(
         Integer sowContractId, String contractType
     );
+
+    /**
+     * Delete all reviews for a specific MSA contract
+     */
+    void deleteByContractIdAndContractType(Integer contractId, String contractType);
+
+    /**
+     * Delete all reviews for a specific SOW contract
+     */
+    void deleteBySowContractIdAndContractType(Integer sowContractId, String contractType);
 }
 

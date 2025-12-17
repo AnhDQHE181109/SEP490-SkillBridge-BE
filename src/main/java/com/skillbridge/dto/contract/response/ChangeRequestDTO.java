@@ -15,6 +15,10 @@ public class ChangeRequestDTO {
     private String amount; // Currency format
     private String status; // "Approved", "Pending", "Rejected"
 
+    // New fields for cost information
+    private String expectedExtraCost; // Expected extra cost from client (currency format)
+    private String costEstimatedByLandbridge; // Cost estimated by LandBridge (currency format)
+
     // Constructors
     public ChangeRequestDTO() {
     }
@@ -90,6 +94,22 @@ public class ChangeRequestDTO {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getExpectedExtraCost() {
+        return expectedExtraCost;
+    }
+
+    public void setExpectedExtraCost(String expectedExtraCost) {
+        this.expectedExtraCost = expectedExtraCost;
+    }
+
+    public String getCostEstimatedByLandbridge() {
+        return costEstimatedByLandbridge;
+    }
+
+    public void setCostEstimatedByLandbridge(String costEstimatedByLandbridge) {
+        this.costEstimatedByLandbridge = costEstimatedByLandbridge;
     }
 }
 

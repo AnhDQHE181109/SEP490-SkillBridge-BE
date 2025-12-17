@@ -19,6 +19,7 @@ public class CreateMSARequest {
     private String invoicingCycle;
     private String billingDay;
     private String taxWithholding;
+    private String taxType;
     private String ipOwnership;
     private String governingLaw;
     private Integer clientContactId;
@@ -122,6 +123,14 @@ public class CreateMSARequest {
 
     public void setTaxWithholding(String taxWithholding) {
         this.taxWithholding = taxWithholding;
+    }
+
+    public String getTaxType() {
+        return taxType;
+    }
+
+    public void setTaxType(String taxType) {
+        this.taxType = taxType;
     }
 
     public String getIpOwnership() {
