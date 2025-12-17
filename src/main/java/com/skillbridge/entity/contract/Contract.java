@@ -62,6 +62,9 @@ public class Contract {
     @Column(name = "tax_withholding", length = 16)
     private String taxWithholding;
 
+    @Column(name = "tax_type", length = 16)
+    private String taxType; // Included | Excluded
+
     // Legal / Compliance
     @Column(name = "ip_ownership", length = 128)
     private String ipOwnership;

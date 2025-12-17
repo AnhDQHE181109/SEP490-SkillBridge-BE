@@ -11,6 +11,9 @@ public class SalesChangeRequestDetailDTO {
     private String changeRequestId; // Format: CR-YYYY-NN
     private String title;
     private String type;
+    private String desiredStartDate; // Client's desired start date (yyyy/MM/dd)
+    private String desiredEndDate;   // Client's desired end date   (yyyy/MM/dd)
+    private Double expectedExtraCost; // Expected extra cost from client
     private String summary;
     private String effectiveFrom; // Format: YYYY-MM-DD
     private String effectiveUntil; // Format: YYYY-MM-DD
@@ -71,6 +74,30 @@ public class SalesChangeRequestDetailDTO {
 
     public void setType(String type) {
         this.type = type;
+    }
+
+    public String getDesiredStartDate() {
+        return desiredStartDate;
+    }
+
+    public void setDesiredStartDate(String desiredStartDate) {
+        this.desiredStartDate = desiredStartDate;
+    }
+
+    public String getDesiredEndDate() {
+        return desiredEndDate;
+    }
+
+    public void setDesiredEndDate(String desiredEndDate) {
+        this.desiredEndDate = desiredEndDate;
+    }
+
+    public Double getExpectedExtraCost() {
+        return expectedExtraCost;
+    }
+
+    public void setExpectedExtraCost(Double expectedExtraCost) {
+        this.expectedExtraCost = expectedExtraCost;
     }
 
     public String getSummary() {

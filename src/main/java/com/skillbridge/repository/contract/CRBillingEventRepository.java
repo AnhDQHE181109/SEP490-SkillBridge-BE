@@ -30,9 +30,11 @@ public interface CRBillingEventRepository extends JpaRepository<CRBillingEvent, 
      * @return List of billing events for the month
      */
     @Query("SELECT e FROM CRBillingEvent e " +
-           "INNER JOIN ChangeRequest cr ON e.changeRequestId = cr.id " +
-           "WHERE cr.sowContractId = :sowContractId " +
-           "AND cr.status IN ('APPROVED', 'Active') " +
+           "WHERE e.changeRequestId IN (" +
+           "  SELECT cr.id FROM ChangeRequest cr " +
+           "  WHERE cr.sowContractId = :sowContractId " +
+           "  AND UPPER(cr.status) IN ('APPROVED', 'ACTIVE')" +
+           ") " +
            "AND e.billingMonth = :billingMonth " +
            "ORDER BY e.createdAt ASC")
     List<CRBillingEvent> findApprovedEventsByMonth(@Param("sowContractId") Integer sowContractId, 
@@ -44,9 +46,11 @@ public interface CRBillingEventRepository extends JpaRepository<CRBillingEvent, 
      * @return List of billing events
      */
     @Query("SELECT e FROM CRBillingEvent e " +
-           "INNER JOIN ChangeRequest cr ON e.changeRequestId = cr.id " +
-           "WHERE cr.sowContractId = :sowContractId " +
-           "AND cr.status IN ('APPROVED', 'Active') " +
+           "WHERE e.changeRequestId IN (" +
+           "  SELECT cr.id FROM ChangeRequest cr " +
+           "  WHERE cr.sowContractId = :sowContractId " +
+           "  AND UPPER(cr.status) IN ('APPROVED', 'ACTIVE')" +
+           ") " +
            "ORDER BY e.billingMonth ASC, e.createdAt ASC")
     List<CRBillingEvent> findApprovedEventsBySowContractId(@Param("sowContractId") Integer sowContractId);
 }
