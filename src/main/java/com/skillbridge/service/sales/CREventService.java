@@ -12,7 +12,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -128,7 +130,43 @@ public class CREventService {
      * @return List of resource events
      */
     public List<CRResourceEvent> getResourceEvents(Integer sowContractId, LocalDate asOfDate) {
-        return crResourceEventRepository.findApprovedEventsUpToDate(sowContractId, asOfDate);
+        logger.debug("Getting resource events for SOW contract: {}, asOfDate: {}", sowContractId, asOfDate);
+        
+        // Debug: Check all events without status filter
+        List<CRResourceEvent> allEvents = crResourceEventRepository.findAllEventsBySowContractId(sowContractId);
+        logger.debug("Total events found for SOW {} (without status filter): {}", sowContractId, allEvents.size());
+        if (!allEvents.isEmpty()) {
+            logger.debug("First event changeRequestId: {}, effectiveStart: {}", 
+                allEvents.get(0).getChangeRequestId(), allEvents.get(0).getEffectiveStart());
+        }
+        
+        List<CRResourceEvent> approvedEvents = crResourceEventRepository.findApprovedEventsUpToDate(sowContractId, asOfDate);
+        logger.debug("Approved events found for SOW {} up to {}: {}", sowContractId, asOfDate, approvedEvents.size());
+        
+        return approvedEvents;
+    }
+    
+    /**
+     * Get all resource events for a SOW contract (without date filter)
+     * Only returns events from approved CRs
+     * @param sowContractId SOW contract ID
+     * @return List of resource events
+     */
+    public List<CRResourceEvent> getAllResourceEvents(Integer sowContractId) {
+        logger.debug("Getting all resource events for SOW contract: {}", sowContractId);
+        
+        // Debug: Check all events without status filter
+        List<CRResourceEvent> allEvents = crResourceEventRepository.findAllEventsBySowContractId(sowContractId);
+        logger.debug("Total events found for SOW {} (without status filter): {}", sowContractId, allEvents.size());
+        if (!allEvents.isEmpty()) {
+            logger.debug("First event changeRequestId: {}, effectiveStart: {}", 
+                allEvents.get(0).getChangeRequestId(), allEvents.get(0).getEffectiveStart());
+        }
+        
+        List<CRResourceEvent> approvedEvents = crResourceEventRepository.findApprovedEventsBySowContractId(sowContractId);
+        logger.debug("Approved events found for SOW {}: {}", sowContractId, approvedEvents.size());
+        
+        return approvedEvents;
     }
     
     /**
@@ -245,6 +283,136 @@ public class CREventService {
             .reduce(BigDecimal.ZERO, BigDecimal::add);
         
         return baselineAmount.add(eventTotal);
+    }
+
+    /**
+     * Calculate monthly resource snapshot for a specific month
+     * Combines baseline engineers with CR events to show engineers active in that month
+     * @param sowContractId SOW contract ID
+     * @param yearMonth Year and month in format YYYY-MM
+     * @return List of engineers active in that month
+     */
+    public List<MonthlyEngineerSnapshot> calculateMonthlyResourceSnapshot(Integer sowContractId, String yearMonth) {
+        logger.debug("Calculating monthly resource snapshot for SOW: {}, month: {}", sowContractId, yearMonth);
+        
+        // Parse year-month to get month start and end
+        LocalDate monthStart = LocalDate.parse(yearMonth + "-01");
+        LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
+        
+        // Get baseline engineers that overlap with the month
+        List<SOWEngagedEngineerBase> baselineEngineers = sowEngagedEngineerBaseRepository
+            .findBySowContractIdOrderByStartDateAsc(sowContractId);
+        
+        // Get all approved resource events
+        List<CRResourceEvent> allEvents = getAllResourceEvents(sowContractId);
+        
+        // Build map of engineers by baseline ID for tracking
+        Map<Integer, MonthlyEngineerSnapshot> engineerMap = new HashMap<>();
+        
+        // Start with baseline engineers that overlap the month
+        for (SOWEngagedEngineerBase base : baselineEngineers) {
+            if (overlapsMonth(base.getStartDate(), base.getEndDate(), monthStart, monthEnd)) {
+                MonthlyEngineerSnapshot snapshot = new MonthlyEngineerSnapshot();
+                snapshot.setEngineerId(base.getId());
+                snapshot.setEngineerLevel(base.getLevel() != null ? base.getLevel() : base.getRole());
+                snapshot.setStartDate(base.getStartDate());
+                snapshot.setEndDate(base.getEndDate());
+                snapshot.setBillingType("Monthly"); // Default for baseline
+                snapshot.setRating(base.getRating() != null ? base.getRating() : BigDecimal.valueOf(100));
+                snapshot.setSalary(base.getUnitRate() != null ? base.getUnitRate() : BigDecimal.ZERO);
+                snapshot.setHourlyRate(null);
+                snapshot.setHours(null);
+                snapshot.setSubtotal(null);
+                engineerMap.put(base.getId(), snapshot);
+            }
+        }
+        
+        // Apply events that affect this month, sorted by effectiveStart (latest wins)
+        List<CRResourceEvent> monthEvents = allEvents.stream()
+            .filter(e -> {
+                // Check if event's effective range overlaps with the month
+                LocalDate eventStart = e.getEffectiveStart();
+                LocalDate eventEnd = e.getEndDateNew() != null ? e.getEndDateNew() : 
+                                    (e.getStartDateNew() != null ? e.getStartDateNew().plusYears(10) : LocalDate.now().plusYears(10));
+                return overlapsMonth(eventStart, eventEnd, monthStart, monthEnd);
+            })
+            .sorted((e1, e2) -> {
+                // Sort by effectiveStart descending (latest first)
+                int dateCompare = e2.getEffectiveStart().compareTo(e1.getEffectiveStart());
+                if (dateCompare != 0) return dateCompare;
+                // Then by createdAt descending
+                return e2.getCreatedAt().compareTo(e1.getCreatedAt());
+            })
+            .collect(Collectors.toList());
+        
+        // Apply events (latest wins for same engineer)
+        for (CRResourceEvent event : monthEvents) {
+            switch (event.getAction()) {
+                case ADD:
+                    // Add new engineer (only if not already in map from baseline)
+                    if (event.getEngineerId() == null || !engineerMap.containsKey(event.getEngineerId())) {
+                        MonthlyEngineerSnapshot snapshot = new MonthlyEngineerSnapshot();
+                        snapshot.setEngineerId(event.getEngineerId());
+                        snapshot.setEngineerLevel(event.getLevel() != null ? event.getLevel() : event.getRole());
+                        snapshot.setStartDate(event.getStartDateNew() != null ? event.getStartDateNew() : monthStart);
+                        snapshot.setEndDate(event.getEndDateNew() != null ? event.getEndDateNew() : monthEnd);
+                        snapshot.setBillingType("Monthly"); // Default
+                        snapshot.setRating(event.getRatingNew() != null ? event.getRatingNew() : BigDecimal.valueOf(100));
+                        snapshot.setSalary(event.getUnitRateNew() != null ? event.getUnitRateNew() : BigDecimal.ZERO);
+                        snapshot.setHourlyRate(null);
+                        snapshot.setHours(null);
+                        snapshot.setSubtotal(null);
+                        // Use a temporary key for new engineers
+                        Integer tempKey = event.getEngineerId() != null ? event.getEngineerId() : 
+                                         (event.getId() * -1); // Negative ID for new engineers
+                        engineerMap.put(tempKey, snapshot);
+                    }
+                    break;
+                    
+                case REMOVE:
+                    // Remove engineer from snapshot
+                    if (event.getEngineerId() != null) {
+                        engineerMap.remove(event.getEngineerId());
+                    }
+                    break;
+                    
+                case MODIFY:
+                    // Modify existing engineer
+                    if (event.getEngineerId() != null && engineerMap.containsKey(event.getEngineerId())) {
+                        MonthlyEngineerSnapshot snapshot = engineerMap.get(event.getEngineerId());
+                        if (event.getLevel() != null) snapshot.setEngineerLevel(event.getLevel());
+                        if (event.getStartDateNew() != null) snapshot.setStartDate(event.getStartDateNew());
+                        if (event.getEndDateNew() != null) snapshot.setEndDate(event.getEndDateNew());
+                        if (event.getRatingNew() != null) snapshot.setRating(event.getRatingNew());
+                        if (event.getUnitRateNew() != null) snapshot.setSalary(event.getUnitRateNew());
+                    }
+                    break;
+            }
+        }
+        
+        // Filter to only engineers active during the month and sort
+        List<MonthlyEngineerSnapshot> result = engineerMap.values().stream()
+            .filter(e -> overlapsMonth(e.getStartDate(), e.getEndDate(), monthStart, monthEnd))
+            .sorted((e1, e2) -> {
+                int levelCompare = (e1.getEngineerLevel() != null ? e1.getEngineerLevel() : "")
+                    .compareTo(e2.getEngineerLevel() != null ? e2.getEngineerLevel() : "");
+                if (levelCompare != 0) return levelCompare;
+                return e1.getStartDate().compareTo(e2.getStartDate());
+            })
+            .collect(Collectors.toList());
+        
+        logger.debug("Monthly snapshot for SOW {} month {}: {} engineers", sowContractId, yearMonth, result.size());
+        return result;
+    }
+
+    /**
+     * Check if a date range overlaps with a month
+     */
+    private boolean overlapsMonth(LocalDate rangeStart, LocalDate rangeEnd, LocalDate monthStart, LocalDate monthEnd) {
+        if (rangeStart == null) return false;
+        if (rangeEnd == null) rangeEnd = LocalDate.now().plusYears(100); // Treat null as far future
+        
+        return !rangeStart.isAfter(monthEnd) && !rangeEnd.isBefore(monthStart);
     }
 }
 

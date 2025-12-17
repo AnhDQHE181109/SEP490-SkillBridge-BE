@@ -228,6 +228,14 @@ public class Contract {
         this.taxWithholding = taxWithholding;
     }
 
+    public String getTaxType() {
+        return taxType;
+    }
+
+    public void setTaxType(String taxType) {
+        this.taxType = taxType;
+    }
+
     public String getIpOwnership() {
         return ipOwnership;
     }

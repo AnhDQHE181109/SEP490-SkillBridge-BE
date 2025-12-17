@@ -23,6 +23,7 @@ public class ContractDetailDTO {
     private String invoicingCycle; // e.g., "Monthly", "Weekly"
     private String billingDay; // e.g., "Last business day"
     private String taxWithholding; // e.g., "10%"
+    private String taxType; // Included | Excluded
     
     // Legal / Compliance
     private String ipOwnership; // e.g., "Client", "LandBridge"
@@ -155,6 +156,14 @@ public class ContractDetailDTO {
 
     public void setTaxWithholding(String taxWithholding) {
         this.taxWithholding = taxWithholding;
+    }
+
+    public String getTaxType() {
+        return taxType;
+    }
+
+    public void setTaxType(String taxType) {
+        this.taxType = taxType;
     }
 
     public String getIpOwnership() {

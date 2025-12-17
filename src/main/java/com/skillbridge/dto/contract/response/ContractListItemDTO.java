@@ -44,6 +44,10 @@ public class ContractListItemDTO {
     
     private List<String> attachments; // List of attachment S3 keys (from attachments_manifest)
 
+    // Project Close Request indicators (only for SOW contracts)
+    private String closeRequestStatus; // Pending, ClientApproved, Rejected
+    private Boolean closeRequestPending; // true when latest is Pending
+
     // Getters and Setters
     public Integer getInternalId() {
         return internalId;
@@ -139,6 +143,22 @@ public class ContractListItemDTO {
 
     public void setAssignee(String assignee) {
         this.assignee = assignee;
+    }
+
+    public String getCloseRequestStatus() {
+        return closeRequestStatus;
+    }
+
+    public void setCloseRequestStatus(String closeRequestStatus) {
+        this.closeRequestStatus = closeRequestStatus;
+    }
+
+    public Boolean getCloseRequestPending() {
+        return closeRequestPending;
+    }
+
+    public void setCloseRequestPending(Boolean closeRequestPending) {
+        this.closeRequestPending = closeRequestPending;
     }
 
     public String getClientName() {
