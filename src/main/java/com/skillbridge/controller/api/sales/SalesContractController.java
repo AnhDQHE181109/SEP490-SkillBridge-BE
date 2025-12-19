@@ -46,6 +46,7 @@ public class SalesContractController {
     public ResponseEntity<?> getContracts(
         @RequestParam(required = false) String search,
         @RequestParam(required = false) String status,
+        @RequestParam(required = false) String type,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size,
         Authentication authentication,
@@ -64,7 +65,7 @@ public class SalesContractController {
         
         try {
             ContractListResponse response = contractService.getContracts(
-                search, status, page, size, currentUser
+                search, status, type, page, size, currentUser
             );
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {

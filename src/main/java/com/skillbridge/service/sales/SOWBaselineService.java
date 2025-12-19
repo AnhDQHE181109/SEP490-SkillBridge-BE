@@ -81,6 +81,14 @@ public class SOWBaselineService {
         List<RetainerBillingDetail> billingDetails = retainerBillingDetailRepository
             .findBySowContractIdOrderByPaymentDateDesc(sowContractId);
         for (RetainerBillingDetail billing : billingDetails) {
+            // Guard against duplicate baseline rows (uk_base_sow_month on sow_contract_id + billing_month)
+            if (billing.getPaymentDate() != null &&
+                retainerBillingBaseRepository
+                    .findBySowContractIdAndBillingMonth(sowContractId, billing.getPaymentDate())
+                    .isPresent()) {
+                // Baseline for this contract and month already exists, skip
+                continue;
+            }
             RetainerBillingBase baseBilling = new RetainerBillingBase();
             baseBilling.setSowContractId(sowContractId);
             // Use Payment Date from billing details instead of first day of month

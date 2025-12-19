@@ -6,12 +6,14 @@ import com.skillbridge.dto.contract.response.ContractListItemDTO;
 import com.skillbridge.dto.contract.response.ContractListResponse;
 import com.skillbridge.entity.auth.User;
 import com.skillbridge.entity.contract.Contract;
+import com.skillbridge.entity.contract.ChangeRequest;
 import com.skillbridge.entity.contract.SOWContract;
 import com.skillbridge.entity.contract.ContractInternalReview;
 import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.repository.contract.ContractRepository;
 import com.skillbridge.repository.contract.SOWContractRepository;
 import com.skillbridge.repository.contract.ContractInternalReviewRepository;
+import com.skillbridge.repository.contract.ChangeRequestRepository;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -49,6 +51,9 @@ public class SalesContractService {
 
     @Autowired
     private ContractInternalReviewRepository contractInternalReviewRepository;
+
+    @Autowired
+    private ChangeRequestRepository changeRequestRepository;
     
     /**
      * Get contracts list with role-based filtering
@@ -58,6 +63,7 @@ public class SalesContractService {
     public ContractListResponse getContracts(
         String search,
         String status,
+        String type,
         int page,
         int size,
         User currentUser
