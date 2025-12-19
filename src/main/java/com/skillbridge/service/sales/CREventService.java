@@ -429,6 +429,19 @@ public class CREventService {
                         if (event.getEndDateNew() != null) snapshot.setEndDate(event.getEndDateNew());
                         if (event.getRatingNew() != null) snapshot.setRating(event.getRatingNew());
                         if (event.getUnitRateNew() != null) snapshot.setSalary(event.getUnitRateNew());
+                        
+                        // Update billing type and hourly fields from ChangeRequestEngagedEngineer
+                        ChangeRequestEngagedEngineer crEngineer = findMatchingCREngineer(event);
+                        if (crEngineer != null) {
+                            snapshot.setBillingType(crEngineer.getBillingType() != null ? crEngineer.getBillingType() : "Monthly");
+                            snapshot.setHourlyRate(crEngineer.getHourlyRate());
+                            snapshot.setHours(crEngineer.getHours());
+                            snapshot.setSubtotal(crEngineer.getSubtotal());
+                            // For hourly billing, salary should be subtotal
+                            if ("Hourly".equalsIgnoreCase(crEngineer.getBillingType()) && crEngineer.getSubtotal() != null) {
+                                snapshot.setSalary(crEngineer.getSubtotal());
+                            }
+                        }
                     }
                     break;
             }
@@ -445,8 +458,80 @@ public class CREventService {
             })
             .collect(Collectors.toList());
         
+        // Additional safety: if after applying baseline + events the month still has no engineers,
+        // fallback one more time to legacy table (defensive for edge cases / data issues)
+        if (result.isEmpty()) {
+            List<SOWEngagedEngineer> legacyEngineers = sowEngagedEngineerRepository
+                .findBySowContractIdOrderByStartDateAsc(sowContractId);
+
+            result = legacyEngineers.stream()
+                .filter(legacy -> overlapsMonth(legacy.getStartDate(), legacy.getEndDate(), monthStart, monthEnd))
+                .map(legacy -> {
+                    MonthlyEngineerSnapshot snapshot = new MonthlyEngineerSnapshot();
+                    snapshot.setEngineerId(legacy.getId());
+                    snapshot.setEngineerLevel(legacy.getEngineerLevel());
+                    snapshot.setStartDate(legacy.getStartDate());
+                    snapshot.setEndDate(legacy.getEndDate());
+                    snapshot.setBillingType(legacy.getBillingType() != null ? legacy.getBillingType() : "Monthly");
+                    snapshot.setRating(legacy.getRating() != null ? legacy.getRating() : BigDecimal.valueOf(100));
+                    snapshot.setSalary(legacy.getSalary() != null ? legacy.getSalary() : BigDecimal.ZERO);
+                    snapshot.setHourlyRate(legacy.getHourlyRate());
+                    snapshot.setHours(legacy.getHours());
+                    snapshot.setSubtotal(legacy.getSubtotal());
+                    return snapshot;
+                })
+                .sorted((e1, e2) -> {
+                    int levelCompare = (e1.getEngineerLevel() != null ? e1.getEngineerLevel() : "")
+                        .compareTo(e2.getEngineerLevel() != null ? e2.getEngineerLevel() : "");
+                    if (levelCompare != 0) return levelCompare;
+                    return e1.getStartDate().compareTo(e2.getStartDate());
+                })
+                .collect(Collectors.toList());
+        }
+        
         logger.debug("Monthly snapshot for SOW {} month {}: {} engineers", sowContractId, yearMonth, result.size());
         return result;
+    }
+    
+    /**
+     * Find matching ChangeRequestEngagedEngineer for a CRResourceEvent
+     * Matches by changeRequestId, engineerLevel (from level or role), and startDate
+     */
+    private ChangeRequestEngagedEngineer findMatchingCREngineer(CRResourceEvent event) {
+        try {
+            List<ChangeRequestEngagedEngineer> crEngineers = changeRequestEngagedEngineerRepository
+                .findByChangeRequestId(event.getChangeRequestId());
+            
+            if (crEngineers.isEmpty()) {
+                return null;
+            }
+            
+            // Build engineer level from event (prefer level, fallback to role)
+            String eventEngineerLevel = event.getLevel() != null ? event.getLevel() : event.getRole();
+            LocalDate eventStartDate = event.getStartDateNew() != null ? event.getStartDateNew() : event.getEffectiveStart();
+            
+            // Try to find exact match by engineerLevel and startDate
+            for (ChangeRequestEngagedEngineer crEngineer : crEngineers) {
+                if (eventEngineerLevel != null && eventEngineerLevel.equals(crEngineer.getEngineerLevel())) {
+                    // If startDate matches or is close (within 1 day), consider it a match
+                    if (eventStartDate != null && crEngineer.getStartDate() != null) {
+                        long daysDiff = Math.abs(java.time.temporal.ChronoUnit.DAYS.between(eventStartDate, crEngineer.getStartDate()));
+                        if (daysDiff <= 1) {
+                            return crEngineer;
+                        }
+                    } else if (eventStartDate == null && crEngineer.getStartDate() == null) {
+                        return crEngineer;
+                    }
+                }
+            }
+            
+            // If no exact match, return first engineer from the same CR (fallback)
+            // This handles cases where engineerLevel format might differ slightly
+            return crEngineers.get(0);
+        } catch (Exception e) {
+            logger.warn("Error finding matching CR engineer for event {}: {}", event.getId(), e.getMessage());
+            return null;
+        }
     }
 
     /**

@@ -344,8 +344,10 @@ public class SalesSOWContractController {
         @RequestParam(required = false) String effectiveEnd,
         @RequestParam(required = false) String note,
         @RequestParam(required = false) String scopeSummary,
+        @RequestParam(required = false) Double contractValue,
         @RequestParam(required = false) Integer assigneeUserId,
         @RequestParam(required = false) String engagedEngineers, // JSON string (for Retainer)
+        @RequestParam(required = false) String milestoneDeliverables, // JSON string (for Fixed Price)
         @RequestParam(required = false) String billingDetails, // JSON string
         @RequestParam(required = false) MultipartFile[] attachments,
         Authentication authentication,
@@ -396,6 +398,7 @@ public class SalesSOWContractController {
             updateRequest.setEffectiveEnd(effectiveEnd);
             updateRequest.setNote(note);
             updateRequest.setScopeSummary(scopeSummary);
+            updateRequest.setContractValue(contractValue);
             updateRequest.setAssigneeUserId(assigneeUserId);
             
             // Parse engagedEngineers if provided
@@ -405,6 +408,19 @@ public class SalesSOWContractController {
                 updateRequest.setEngagedEngineers(engagedEngineersList != null ? engagedEngineersList : new ArrayList<>());
             } else {
                 updateRequest.setEngagedEngineers(new ArrayList<>());
+            }
+            
+            // Parse milestoneDeliverables if provided (for Fixed Price)
+            if (milestoneDeliverables != null && !milestoneDeliverables.trim().isEmpty()) {
+                try {
+                    Type milestoneListType = new TypeToken<List<CreateSOWRequest.MilestoneDeliverableDTO>>(){}.getType();
+                    List<CreateSOWRequest.MilestoneDeliverableDTO> milestonesList = gson.fromJson(milestoneDeliverables, milestoneListType);
+                    updateRequest.setMilestoneDeliverables(milestonesList != null ? milestonesList : new ArrayList<>());
+                } catch (Exception e) {
+                    return ResponseEntity.status(400).body(new ErrorResponse("Invalid milestoneDeliverables JSON: " + e.getMessage()));
+                }
+            } else {
+                updateRequest.setMilestoneDeliverables(new ArrayList<>());
             }
             
             // Parse billingDetails if provided
@@ -1112,6 +1128,12 @@ public class SalesSOWContractController {
             return ResponseEntity.status(500).body(new ErrorResponse("Failed to update payment status: " + e.getMessage()));
         }
     }
+    
+    /**
+     * Get events for SOW contract
+     * GET /sales/contracts/sow/{contractId}/events?type={resource|billing}&fromDate={date}&toDate={date}
+     */
+    @GetMapping("/{contractId}/events")
     public ResponseEntity<?> getSOWContractEvents(
         @PathVariable Integer contractId,
         @RequestParam(required = false) String type, // "resource" or "billing"
@@ -1134,8 +1156,15 @@ public class SalesSOWContractController {
             java.util.Map<String, Object> events = new java.util.HashMap<>();
             
             if (type == null || "resource".equals(type)) {
-                java.time.LocalDate asOfDate = toDate != null ? java.time.LocalDate.parse(toDate) : java.time.LocalDate.now();
+                // If toDate is provided, filter events up to that date
+                // Otherwise, get all approved events (including future ones)
+                if (toDate != null) {
+                    java.time.LocalDate asOfDate = java.time.LocalDate.parse(toDate);
                 events.put("resources", crEventService.getResourceEvents(contractId, asOfDate));
+                } else {
+                    // Get all approved events without date filter
+                    events.put("resources", crEventService.getAllResourceEvents(contractId));
+                }
             }
             
             if (type == null || "billing".equals(type)) {
@@ -1151,6 +1180,36 @@ public class SalesSOWContractController {
             return ResponseEntity.ok(events);
         } catch (Exception e) {
             return ResponseEntity.status(500).body(new ErrorResponse("Failed to get events: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Get monthly resource snapshot for SOW contract
+     * GET /sales/contracts/sow/{contractId}/monthly-resources?yearMonth=YYYY-MM
+     */
+    @GetMapping("/{contractId}/monthly-resources")
+    public ResponseEntity<?> getMonthlyResourceSnapshot(
+        @PathVariable Integer contractId,
+        @RequestParam String yearMonth, // Format: YYYY-MM
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        User currentUser = getCurrentUser(authentication, request);
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
+        
+        String role = currentUser.getRole();
+        if (role == null || (!role.equals("SALES_MANAGER") && !role.equals("SALES_REP"))) {
+            return ResponseEntity.status(403).build();
+        }
+        
+        try {
+            List<CREventService.MonthlyEngineerSnapshot> snapshot = 
+                crEventService.calculateMonthlyResourceSnapshot(contractId, yearMonth);
+            return ResponseEntity.ok(snapshot);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to get monthly resources: " + e.getMessage()));
         }
     }
 }

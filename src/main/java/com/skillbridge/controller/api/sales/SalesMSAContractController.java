@@ -64,6 +64,7 @@ public class SalesMSAContractController {
         @RequestParam String invoicingCycle,
         @RequestParam String billingDay,
         @RequestParam String taxWithholding,
+        @RequestParam(defaultValue = "Included") String taxType,
         @RequestParam String ipOwnership,
         @RequestParam String governingLaw,
         @RequestParam Integer clientContactId,
@@ -115,6 +116,7 @@ public class SalesMSAContractController {
             createRequest.setInvoicingCycle(invoicingCycle);
             createRequest.setBillingDay(billingDay);
             createRequest.setTaxWithholding(taxWithholding);
+            createRequest.setTaxType(taxType);
             createRequest.setIpOwnership(ipOwnership);
             createRequest.setGoverningLaw(governingLaw);
             createRequest.setClientContactId(clientContactId);
@@ -210,6 +212,7 @@ public class SalesMSAContractController {
         @RequestParam String invoicingCycle,
         @RequestParam String billingDay,
         @RequestParam String taxWithholding,
+        @RequestParam(defaultValue = "Included") String taxType,
         @RequestParam String ipOwnership,
         @RequestParam String governingLaw,
         @RequestParam Integer clientContactId,
@@ -261,6 +264,7 @@ public class SalesMSAContractController {
             updateRequest.setInvoicingCycle(invoicingCycle);
             updateRequest.setBillingDay(billingDay);
             updateRequest.setTaxWithholding(taxWithholding);
+            updateRequest.setTaxType(taxType);
             updateRequest.setIpOwnership(ipOwnership);
             updateRequest.setGoverningLaw(governingLaw);
             updateRequest.setClientContactId(clientContactId);
