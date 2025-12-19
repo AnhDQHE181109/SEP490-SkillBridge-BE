@@ -31,6 +31,7 @@ public class SOWContractDetailDTO {
     private String invoicingCycle;
     private String billingDay;
     private String taxWithholding;
+    private String taxType; // Included | Excluded (from parent MSA)
     
     // Legal / Compliance
     private String ipOwnership;
@@ -232,6 +233,14 @@ public class SOWContractDetailDTO {
 
     public void setTaxWithholding(String taxWithholding) {
         this.taxWithholding = taxWithholding;
+    }
+
+    public String getTaxType() {
+        return taxType;
+    }
+
+    public void setTaxType(String taxType) {
+        this.taxType = taxType;
     }
 
     public String getIpOwnership() {
