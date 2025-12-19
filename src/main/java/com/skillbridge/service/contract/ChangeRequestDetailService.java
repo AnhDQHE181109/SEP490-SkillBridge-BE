@@ -339,6 +339,7 @@ public class ChangeRequestDetailService {
                 String engagementType = sowContract.getEngagementType(); 
                 // For Fixed Price SOW, create billing detail when approved
                 if ("Fixed Price".equals(engagementType)) {
+                    String crType = changeRequest.getType();
                     // Check if impact analysis data exists (newEndDate and cost)
                     // Use costEstimatedByLandbridge if available, otherwise fallback to expectedExtraCost or amount
                     BigDecimal costToUse = changeRequest.getCostEstimatedByLandbridge();
@@ -349,7 +350,13 @@ public class ChangeRequestDetailService {
                         costToUse = changeRequest.getAmount();
                     }
                     
-                    if (changeRequest.getNewEndDate() != null && costToUse != null) {
+                    // For Add Scope / Other: require newEndDate and cost
+                    // For Remove Scope: allow creating billing detail even if newEndDate is null
+                    boolean canCreateBillingForFixedPrice =
+                        (costToUse != null) &&
+                        (changeRequest.getNewEndDate() != null || "Remove Scope".equals(crType));
+                    
+                    if (canCreateBillingForFixedPrice) {
                         // Ensure costEstimatedByLandbridge is set for billing detail creation
                         if (changeRequest.getCostEstimatedByLandbridge() == null) {
                             changeRequest.setCostEstimatedByLandbridge(costToUse);
@@ -379,15 +386,26 @@ public class ChangeRequestDetailService {
                 billingDay = sowContract.getBillingDay();
             }
             
-            // Calculate invoice date based on newEndDate and billing day
-            LocalDate invoiceDate = calculateInvoiceDate(changeRequest.getNewEndDate(), billingDay);
+            // Determine milestone/end date for this change request
+            // For most CRs, use newEndDate from changeRequest
+            // For Remove Scope (where newEndDate may be null), fall back to SOW period end or today
+            LocalDate milestoneEndDate = changeRequest.getNewEndDate();
+            if (milestoneEndDate == null) {
+                if (sowContract.getPeriodEnd() != null) {
+                    milestoneEndDate = sowContract.getPeriodEnd();
+                } else {
+                    milestoneEndDate = LocalDate.now();
+                }
+            }
+            
+            // Calculate invoice date based on milestoneEndDate and billing day
+            LocalDate invoiceDate = calculateInvoiceDate(milestoneEndDate, billingDay);
             
             // Create FixedPriceBillingDetail
             FixedPriceBillingDetail billingDetail = new FixedPriceBillingDetail();
             billingDetail.setSowContractId(sowContract.getId());
             billingDetail.setBillingName(changeRequest.getTitle() != null ? changeRequest.getTitle() : "Change Request Payment");
-            billingDetail.setMilestone(changeRequest.getNewEndDate() != null ? 
-                changeRequest.getNewEndDate().format(DATE_FORMATTER) : null);
+            billingDetail.setMilestone(milestoneEndDate.format(DATE_FORMATTER));
             billingDetail.setAmount(changeRequest.getCostEstimatedByLandbridge());
             billingDetail.setPercentage(null); // Percentage is null for change requests
             billingDetail.setInvoiceDate(invoiceDate);

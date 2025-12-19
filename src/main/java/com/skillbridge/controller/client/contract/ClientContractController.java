@@ -6,6 +6,7 @@ import com.skillbridge.entity.auth.User;
 import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.service.contract.ContractDetailService;
 import com.skillbridge.service.contract.ContractListService;
+import com.skillbridge.service.sales.CREventService;
 import com.skillbridge.util.JwtTokenProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -36,6 +37,9 @@ public class ClientContractController {
     
     @Autowired
     private ContractDetailService contractDetailService;
+    
+    @Autowired
+    private CREventService crEventService;
     
     @Autowired
     private UserRepository userRepository;
@@ -311,6 +315,56 @@ public class ClientContractController {
             logger.error("Error cancelling contract: contractId={}", contractId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse("Failed to cancel contract: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * Get monthly resource snapshot for SOW contract (for client)
+     * GET /api/client/contracts/{contractId}/monthly-resources?yearMonth=YYYY-MM
+     */
+    @GetMapping("/{contractId}/monthly-resources")
+    public ResponseEntity<?> getMonthlyResourceSnapshot(
+        @PathVariable Integer contractId,
+        @RequestParam String yearMonth, // Format: YYYY-MM
+        Authentication authentication,
+        HttpServletRequest request
+    ) {
+        try {
+            User currentUser = getCurrentUser(authentication, request);
+            
+            if (currentUser == null) {
+                logger.warn("Unauthorized access attempt to GET /client/contracts/{}/monthly-resources", contractId);
+                return ResponseEntity.status(401).build();
+            }
+
+            Integer userId = currentUser.getId();
+            logger.info("GET /client/contracts/{}/monthly-resources - userId: {}, yearMonth: {}", contractId, userId, yearMonth);
+            
+            // Verify user has access to this contract
+            ContractDetailDTO detail = contractDetailService.getContractDetail(contractId, userId);
+            if (detail == null) {
+                return ResponseEntity.status(403).body(new ErrorResponse("Access denied"));
+            }
+            
+            // Only allow for Retainer SOW contracts
+            if (!"SOW".equals(detail.getContractType()) || !"Retainer".equals(detail.getEngagementType())) {
+                return ResponseEntity.status(400).body(new ErrorResponse("Monthly resources are only available for Retainer SOW contracts"));
+            }
+            
+            List<CREventService.MonthlyEngineerSnapshot> snapshot = 
+                crEventService.calculateMonthlyResourceSnapshot(contractId, yearMonth);
+            
+            logger.info("Successfully retrieved monthly resources for contractId: {}, yearMonth: {}, userId: {}", contractId, yearMonth, userId);
+            return ResponseEntity.ok(snapshot);
+            
+        } catch (jakarta.persistence.EntityNotFoundException e) {
+            logger.error("Contract not found: contractId={}", contractId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse("Contract not found"));
+        } catch (Exception e) {
+            logger.error("Error fetching monthly resources: contractId={}, yearMonth={}", contractId, yearMonth, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new ErrorResponse("Failed to get monthly resources: " + e.getMessage()));
         }
     }
     

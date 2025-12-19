@@ -43,6 +43,12 @@ public class CREventService {
     @Autowired
     private RetainerBillingBaseRepository retainerBillingBaseRepository;
 
+    @Autowired
+    private SOWEngagedEngineerRepository sowEngagedEngineerRepository;
+    
+    @Autowired
+    private ChangeRequestEngagedEngineerRepository changeRequestEngagedEngineerRepository;
+
     /**
      * Create resource event from Change Request
      * @param cr Change Request
@@ -303,13 +309,11 @@ public class CREventService {
         List<SOWEngagedEngineerBase> baselineEngineers = sowEngagedEngineerBaseRepository
             .findBySowContractIdOrderByStartDateAsc(sowContractId);
         
-        // Get all approved resource events
-        List<CRResourceEvent> allEvents = getAllResourceEvents(sowContractId);
-        
         // Build map of engineers by baseline ID for tracking
         Map<Integer, MonthlyEngineerSnapshot> engineerMap = new HashMap<>();
         
         // Start with baseline engineers that overlap the month
+        if (!baselineEngineers.isEmpty()) {
         for (SOWEngagedEngineerBase base : baselineEngineers) {
             if (overlapsMonth(base.getStartDate(), base.getEndDate(), monthStart, monthEnd)) {
                 MonthlyEngineerSnapshot snapshot = new MonthlyEngineerSnapshot();
@@ -326,6 +330,30 @@ public class CREventService {
                 engineerMap.put(base.getId(), snapshot);
             }
         }
+        } else {
+            // Fallback: use legacy engineers if no baseline exists (e.g. new contract in review)
+            List<SOWEngagedEngineer> legacyEngineers = sowEngagedEngineerRepository
+                .findBySowContractIdOrderByStartDateAsc(sowContractId);
+            for (SOWEngagedEngineer legacy : legacyEngineers) {
+                if (overlapsMonth(legacy.getStartDate(), legacy.getEndDate(), monthStart, monthEnd)) {
+                    MonthlyEngineerSnapshot snapshot = new MonthlyEngineerSnapshot();
+                    snapshot.setEngineerId(legacy.getId());
+                    snapshot.setEngineerLevel(legacy.getEngineerLevel());
+                    snapshot.setStartDate(legacy.getStartDate());
+                    snapshot.setEndDate(legacy.getEndDate());
+                    snapshot.setBillingType(legacy.getBillingType() != null ? legacy.getBillingType() : "Monthly");
+                    snapshot.setRating(legacy.getRating() != null ? legacy.getRating() : BigDecimal.valueOf(100));
+                    snapshot.setSalary(legacy.getSalary() != null ? legacy.getSalary() : BigDecimal.ZERO);
+                    snapshot.setHourlyRate(legacy.getHourlyRate());
+                    snapshot.setHours(legacy.getHours());
+                    snapshot.setSubtotal(legacy.getSubtotal());
+                    engineerMap.put(legacy.getId(), snapshot);
+                }
+            }
+        }
+        
+        // Get all approved resource events
+        List<CRResourceEvent> allEvents = getAllResourceEvents(sowContractId);
         
         // Apply events that affect this month, sorted by effectiveStart (latest wins)
         List<CRResourceEvent> monthEvents = allEvents.stream()
@@ -356,12 +384,28 @@ public class CREventService {
                         snapshot.setEngineerLevel(event.getLevel() != null ? event.getLevel() : event.getRole());
                         snapshot.setStartDate(event.getStartDateNew() != null ? event.getStartDateNew() : monthStart);
                         snapshot.setEndDate(event.getEndDateNew() != null ? event.getEndDateNew() : monthEnd);
-                        snapshot.setBillingType("Monthly"); // Default
                         snapshot.setRating(event.getRatingNew() != null ? event.getRatingNew() : BigDecimal.valueOf(100));
                         snapshot.setSalary(event.getUnitRateNew() != null ? event.getUnitRateNew() : BigDecimal.ZERO);
+                        
+                        // Get billing type and hourly fields from ChangeRequestEngagedEngineer
+                        ChangeRequestEngagedEngineer crEngineer = findMatchingCREngineer(event);
+                        if (crEngineer != null) {
+                            snapshot.setBillingType(crEngineer.getBillingType() != null ? crEngineer.getBillingType() : "Monthly");
+                            snapshot.setHourlyRate(crEngineer.getHourlyRate());
+                            snapshot.setHours(crEngineer.getHours());
+                            snapshot.setSubtotal(crEngineer.getSubtotal());
+                            // For hourly billing, salary should be subtotal
+                            if ("Hourly".equalsIgnoreCase(crEngineer.getBillingType()) && crEngineer.getSubtotal() != null) {
+                                snapshot.setSalary(crEngineer.getSubtotal());
+                            }
+                        } else {
+                            // Default to Monthly if not found
+                            snapshot.setBillingType("Monthly");
                         snapshot.setHourlyRate(null);
                         snapshot.setHours(null);
                         snapshot.setSubtotal(null);
+                        }
+                        
                         // Use a temporary key for new engineers
                         Integer tempKey = event.getEngineerId() != null ? event.getEngineerId() : 
                                          (event.getId() * -1); // Negative ID for new engineers
@@ -413,6 +457,73 @@ public class CREventService {
         if (rangeEnd == null) rangeEnd = LocalDate.now().plusYears(100); // Treat null as far future
         
         return !rangeStart.isAfter(monthEnd) && !rangeEnd.isBefore(monthStart);
+    }
+    
+    /**
+     * Inner class to represent current engineer state
+     */
+    public static class CurrentEngineerState {
+        private Integer engineerId;
+        private String role;
+        private String level;
+        private BigDecimal rating;
+        private BigDecimal unitRate;
+        private LocalDate startDate;
+        private LocalDate endDate;
+        
+        // Getters and Setters
+        public Integer getEngineerId() { return engineerId; }
+        public void setEngineerId(Integer engineerId) { this.engineerId = engineerId; }
+        public String getRole() { return role; }
+        public void setRole(String role) { this.role = role; }
+        public String getLevel() { return level; }
+        public void setLevel(String level) { this.level = level; }
+        public BigDecimal getRating() { return rating; }
+        public void setRating(BigDecimal rating) { this.rating = rating; }
+        public BigDecimal getUnitRate() { return unitRate; }
+        public void setUnitRate(BigDecimal unitRate) { this.unitRate = unitRate; }
+        public LocalDate getStartDate() { return startDate; }
+        public void setStartDate(LocalDate startDate) { this.startDate = startDate; }
+        public LocalDate getEndDate() { return endDate; }
+        public void setEndDate(LocalDate endDate) { this.endDate = endDate; }
+    }
+    
+    /**
+     * DTO for monthly engineer snapshot
+     */
+    public static class MonthlyEngineerSnapshot {
+        private Integer engineerId;
+        private String engineerLevel;
+        private LocalDate startDate;
+        private LocalDate endDate;
+        private String billingType;
+        private BigDecimal rating;
+        private BigDecimal salary;
+        private BigDecimal hourlyRate;
+        private BigDecimal hours;
+        private BigDecimal subtotal;
+        
+        // Getters and Setters
+        public Integer getEngineerId() { return engineerId; }
+        public void setEngineerId(Integer engineerId) { this.engineerId = engineerId; }
+        public String getEngineerLevel() { return engineerLevel; }
+        public void setEngineerLevel(String engineerLevel) { this.engineerLevel = engineerLevel; }
+        public LocalDate getStartDate() { return startDate; }
+        public void setStartDate(LocalDate startDate) { this.startDate = startDate; }
+        public LocalDate getEndDate() { return endDate; }
+        public void setEndDate(LocalDate endDate) { this.endDate = endDate; }
+        public String getBillingType() { return billingType; }
+        public void setBillingType(String billingType) { this.billingType = billingType; }
+        public BigDecimal getRating() { return rating; }
+        public void setRating(BigDecimal rating) { this.rating = rating; }
+        public BigDecimal getSalary() { return salary; }
+        public void setSalary(BigDecimal salary) { this.salary = salary; }
+        public BigDecimal getHourlyRate() { return hourlyRate; }
+        public void setHourlyRate(BigDecimal hourlyRate) { this.hourlyRate = hourlyRate; }
+        public BigDecimal getHours() { return hours; }
+        public void setHours(BigDecimal hours) { this.hours = hours; }
+        public BigDecimal getSubtotal() { return subtotal; }
+        public void setSubtotal(BigDecimal subtotal) { this.subtotal = subtotal; }
     }
 }
 
