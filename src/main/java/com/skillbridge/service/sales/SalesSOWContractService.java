@@ -350,7 +350,8 @@ public class SalesSOWContractService {
         // Convert to DTO
         SOWContractDTO dto = new SOWContractDTO();
         dto.setId(contract.getId());
-        dto.setContractId(generateContractId(contract.getId(), contract.getCreatedAt()));
+        String contractIdForDto = generateContractId(contract.getId(), contract.getCreatedAt());
+        dto.setContractId(contractIdForDto);
         dto.setContractName(contract.getContractName());
         // Map status for display: Under_Review -> "Client Under Review" when approved
         String statusDisplay = contract.getStatus().name().replace("_", " ");

@@ -541,6 +541,109 @@ public class EmailService {
     }
 
     /**
+     * Send contract pending approval notification email to Client
+     * @param clientUser Client user entity
+     * @param contractType Contract type ("MSA" or "SOW")
+     * @param contractName Contract name
+     * @param contractId Contract ID (formatted, e.g., "MSA-2025-01" or "SOW-2025-01")
+     */
+    public void sendContractPendingApprovalNotificationEmail(User clientUser, String contractType, String contractName, String contractId) {
+        try {
+            String clientName = clientUser.getFullName() != null ? clientUser.getFullName() : "Client";
+            String clientEmail = clientUser.getEmail() != null ? clientUser.getEmail() : null;
+            
+            if (clientEmail == null || clientEmail.isEmpty()) {
+                System.err.println("Client email is missing. Cannot send contract pending approval notification email.");
+                return;
+            }
+
+            // Build email subject
+            String contractTypeDisplay = "MSA".equalsIgnoreCase(contractType) ? "MSA" : "SOW";
+            String subject = "Contract Pending Your Approval - " + contractName + " (" + contractId + ")";
+
+            // Build email body
+            StringBuilder bodyBuilder = new StringBuilder();
+            bodyBuilder.append("Dear ").append(clientName).append(",\n\n");
+            bodyBuilder.append("We are pleased to inform you that a new ").append(contractTypeDisplay).append(" contract has been approved by our Sales Manager and is now pending your review and approval.\n\n");
+            
+            // Contract information
+            bodyBuilder.append("Contract Details:\n");
+            bodyBuilder.append("- Type: ").append(contractTypeDisplay).append("\n");
+            bodyBuilder.append("- Name: ").append(contractName != null ? contractName : "Contract").append("\n");
+            bodyBuilder.append("- Contract ID: ").append(contractId != null ? contractId : "N/A").append("\n");
+            bodyBuilder.append("\n");
+
+            // Login information
+            String loginUrl = baseUrl + "/client/login";
+            bodyBuilder.append("Please log in to your account to review and approve the contract:\n");
+            bodyBuilder.append(loginUrl).append("\n\n");
+
+            bodyBuilder.append("You can access your contracts and provide approval through your client portal.\n\n");
+            bodyBuilder.append("If you have any questions or need clarification, please feel free to contact us.\n\n");
+            bodyBuilder.append("Best regards,\n");
+            bodyBuilder.append(smtpFromName).append("\n");
+            bodyBuilder.append("SkillBridge Team");
+
+            String body = bodyBuilder.toString();
+
+            // Send email if JavaMailSender is configured
+            if (javaMailSender != null) {
+                try {
+                    SimpleMailMessage message = new SimpleMailMessage();
+                    // Validate and format from email properly
+                    String fromEmailAddress = smtpFromEmail;
+                    if (fromEmailAddress == null || fromEmailAddress.trim().isEmpty()) {
+                        fromEmailAddress = "noreply@skillbridge.com";
+                    } else if (!fromEmailAddress.contains("@")) {
+                        // If from email doesn't have @, use a default format
+                        fromEmailAddress = fromEmailAddress + "@skillbridge.com";
+                    }
+                    // Validate email format
+                    if (!fromEmailAddress.matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
+                        System.err.println("Invalid from email format: " + fromEmailAddress);
+                        fromEmailAddress = "noreply@skillbridge.com";
+                    }
+                    message.setFrom(fromEmailAddress);
+                    message.setTo(clientEmail);
+                    message.setSubject(subject);
+                    message.setText(body);
+                    javaMailSender.send(message);
+                    System.out.println("Contract pending approval notification email sent successfully to Client: " + clientEmail);
+                    System.out.println("From: " + fromEmailAddress);
+                } catch (Exception e) {
+                    // Log detailed error information
+                    System.err.println("=== ERROR: Failed to send contract pending approval notification email ===");
+                    System.err.println("To: " + clientEmail);
+                    System.err.println("From: " + smtpFromEmail);
+                    System.err.println("Error: " + e.getClass().getSimpleName());
+                    System.err.println("Message: " + e.getMessage());
+                    if (e.getCause() != null) {
+                        System.err.println("Cause: " + e.getCause().getMessage());
+                    }
+                    e.printStackTrace();
+                    System.err.println("================================================");
+                    // Don't throw exception - just log and continue
+                    // This ensures contract approval is not blocked by email sending failure
+                }
+            } else {
+                System.out.println("JavaMailSender is not configured. Email will not be sent.");
+            }
+
+            // Log email content (for development/testing)
+            System.out.println("=== Contract Pending Approval Notification Email ===");
+            System.out.println("To: " + clientEmail);
+            System.out.println("Subject: " + subject);
+            System.out.println("Body:\n" + body);
+            System.out.println("================================================");
+
+        } catch (Exception e) {
+            // Log error but don't fail the contract approval
+            System.err.println("Failed to prepare contract pending approval notification email: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
      * Send password reset email to user
      * @param user User entity
      * @param resetLink Password reset link with token
