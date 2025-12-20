@@ -33,6 +33,7 @@ import com.skillbridge.repository.document.DocumentMetadataRepository;
 import com.skillbridge.repository.opportunity.OpportunityRepository;
 import com.skillbridge.repository.proposal.ProposalRepository;
 import com.skillbridge.service.common.S3Service;
+import com.skillbridge.service.common.EmailService;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -99,6 +100,9 @@ public class SalesMSAContractService {
     
     @Autowired
     private ChangeRequestHistoryRepository changeRequestHistoryRepository;
+    
+    @Autowired
+    private EmailService emailService;
     
     private final Gson gson = new Gson();
     
@@ -176,6 +180,7 @@ public class SalesMSAContractService {
         contract.setInvoicingCycle(request.getInvoicingCycle());
         contract.setBillingDay(request.getBillingDay());
         contract.setTaxWithholding(request.getTaxWithholding());
+        contract.setTaxType(request.getTaxType());
         contract.setIpOwnership(request.getIpOwnership());
         contract.setGoverningLaw(request.getGoverningLaw());
         contract.setLandbridgeContactName(landbridgeContact.getFullName());
@@ -498,6 +503,7 @@ public class SalesMSAContractService {
         dto.setInvoicingCycle(contract.getInvoicingCycle());
         dto.setBillingDay(contract.getBillingDay());
         dto.setTaxWithholding(contract.getTaxWithholding());
+        dto.setTaxType(contract.getTaxType());
         dto.setIpOwnership(contract.getIpOwnership());
         dto.setGoverningLaw(contract.getGoverningLaw());
         
@@ -598,6 +604,18 @@ public class SalesMSAContractService {
         
         // Map status string to enum
         Contract.ContractStatus statusEnum = mapStatusToEnum(request.getStatus());
+
+        // Role flags
+        boolean isSalesManager = "SALES_MANAGER".equals(currentUser.getRole());
+        boolean isSalesRep = "SALES_REP".equals(currentUser.getRole());
+
+        // Sales Rep: when updating a contract that is currently in Request for Change status,
+        // auto-escalate to Internal Review and disallow review submit
+        boolean skipReviewSubmit = !isSalesManager;
+        if (isSalesRep && contract.getStatus() == Contract.ContractStatus.Request_for_Change) {
+            statusEnum = Contract.ContractStatus.Under_Review; // Internal Review
+        }
+
         contract.setStatus(statusEnum);
         
         contract.setPeriodStart(LocalDate.parse(request.getEffectiveStart()));
@@ -609,6 +627,7 @@ public class SalesMSAContractService {
         contract.setInvoicingCycle(request.getInvoicingCycle());
         contract.setBillingDay(request.getBillingDay());
         contract.setTaxWithholding(request.getTaxWithholding());
+        contract.setTaxType(request.getTaxType());
         contract.setIpOwnership(request.getIpOwnership());
         contract.setGoverningLaw(request.getGoverningLaw());
         contract.setLandbridgeContactName(landbridgeContact.getFullName());
@@ -675,8 +694,8 @@ public class SalesMSAContractService {
             System.out.println("No attachments provided for update");
         }
         
-        // Handle review if reviewer is assigned and review is submitted
-        if (request.getReviewerId() != null && request.getReviewAction() != null) {
+        // Handle review if reviewer is assigned and review is submitted (Sales Manager only)
+        if (!skipReviewSubmit && request.getReviewerId() != null && request.getReviewAction() != null) {
             submitReview(contract.getId(), request.getReviewNotes(), request.getReviewAction(), currentUser);
         }
         
@@ -743,6 +762,32 @@ public class SalesMSAContractService {
             statusDisplay = "Internal Review";
         }
         dto.setStatus(statusDisplay);
+        
+        // Send email notification to client when Sales Manager approves contract
+        if ("APPROVE".equalsIgnoreCase(action)) {
+            try {
+                // Get client user
+                if (contract.getClientId() != null) {
+                    Optional<User> clientUserOpt = userRepository.findById(contract.getClientId());
+                    if (clientUserOpt.isPresent()) {
+                        User clientUser = clientUserOpt.get();
+                        // Generate contract ID for email
+                        String emailContractId = generateContractId(contract.getId(), contract.getCreatedAt());
+                        // Send email notification
+                        emailService.sendContractPendingApprovalNotificationEmail(
+                            clientUser,
+                            "MSA",
+                            contract.getContractName() != null ? contract.getContractName() : "MSA Contract",
+                            emailContractId
+                        );
+                    }
+                }
+            } catch (Exception e) {
+                // Log error but don't fail the contract approval
+                System.err.println("Failed to send contract pending approval notification email: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
         
         return dto;
     }

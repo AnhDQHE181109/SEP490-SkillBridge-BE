@@ -3,6 +3,7 @@ package com.skillbridge.service.common;
 import com.skillbridge.entity.common.EmailTemplate;
 import com.skillbridge.entity.contact.Contact;
 import com.skillbridge.entity.auth.User;
+import com.skillbridge.dto.contact.request.ContactFormData;
 import com.skillbridge.repository.common.EmailTemplateRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -336,6 +337,206 @@ public class EmailService {
             System.err.println("Failed to send meeting invitation email: " + e.getMessage());
             e.printStackTrace();
             throw new RuntimeException("Failed to send meeting invitation email", e);
+        }
+    }
+
+    /**
+     * Send new contact notification email to Sales team
+     * @param contactData Contact form data
+     * @param contactId Contact ID
+     */
+    public void sendNewContactNotificationEmail(ContactFormData contactData, Integer contactId) {
+        try {
+            String salesEmail = "khangnhhe160625@fpt.edu.vn";
+            String clientName = contactData.getName() != null ? contactData.getName() : "Guest";
+            String companyName = contactData.getCompanyName() != null ? contactData.getCompanyName() : "N/A";
+            String clientEmail = contactData.getEmail() != null ? contactData.getEmail() : "N/A";
+            String phone = contactData.getPhone() != null ? contactData.getPhone() : "N/A";
+            String title = contactData.getTitle() != null ? contactData.getTitle() : "Contact Request";
+            String message = contactData.getMessage() != null ? contactData.getMessage() : "No message provided";
+
+            // Build email subject
+            String subject = "New Contact Request - " + clientName + " (" + companyName + ")";
+
+            // Build email body
+            StringBuilder bodyBuilder = new StringBuilder();
+            bodyBuilder.append("Dear Sales Team,\n\n");
+            bodyBuilder.append("A new contact request has been submitted through the Contact Us form.\n\n");
+            
+            // Contact information
+            bodyBuilder.append("Contact Details:\n");
+            bodyBuilder.append("- Name: ").append(clientName).append("\n");
+            bodyBuilder.append("- Company: ").append(companyName).append("\n");
+            bodyBuilder.append("- Email: ").append(clientEmail).append("\n");
+            bodyBuilder.append("- Phone: ").append(phone).append("\n");
+            bodyBuilder.append("- Title: ").append(title).append("\n");
+            bodyBuilder.append("- Message: ").append(message).append("\n");
+            bodyBuilder.append("- Contact ID: ").append(contactId).append("\n\n");
+
+            bodyBuilder.append("Please review this contact request and follow up with the client as soon as possible.\n\n");
+            bodyBuilder.append("Best regards,\n");
+            bodyBuilder.append(smtpFromName).append("\n");
+            bodyBuilder.append("SkillBridge System");
+
+            String body = bodyBuilder.toString();
+
+            // Send email if JavaMailSender is configured
+            if (javaMailSender != null) {
+                try {
+                    SimpleMailMessage messageObj = new SimpleMailMessage();
+                    // Validate and format from email properly
+                    String fromEmailAddress = smtpFromEmail;
+                    if (fromEmailAddress == null || fromEmailAddress.trim().isEmpty()) {
+                        fromEmailAddress = "noreply@skillbridge.com";
+                    } else if (!fromEmailAddress.contains("@")) {
+                        // If from email doesn't have @, use a default format
+                        fromEmailAddress = fromEmailAddress + "@skillbridge.com";
+                    }
+                    // Validate email format
+                    if (!fromEmailAddress.matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
+                        System.err.println("Invalid from email format: " + fromEmailAddress);
+                        fromEmailAddress = "noreply@skillbridge.com";
+                    }
+                    messageObj.setFrom(fromEmailAddress);
+                    messageObj.setTo(salesEmail);
+                    messageObj.setSubject(subject);
+                    messageObj.setText(body);
+                    javaMailSender.send(messageObj);
+                    System.out.println("New contact notification email sent successfully to Sales: " + salesEmail);
+                    System.out.println("From: " + fromEmailAddress);
+                } catch (Exception e) {
+                    // Log detailed error information
+                    System.err.println("=== ERROR: Failed to send new contact notification email ===");
+                    System.err.println("To: " + salesEmail);
+                    System.err.println("From: " + smtpFromEmail);
+                    System.err.println("Error: " + e.getClass().getSimpleName());
+                    System.err.println("Message: " + e.getMessage());
+                    if (e.getCause() != null) {
+                        System.err.println("Cause: " + e.getCause().getMessage());
+                    }
+                    e.printStackTrace();
+                    System.err.println("================================================");
+                    // Don't throw exception - just log and continue
+                    // This ensures contact creation is not blocked by email sending failure
+                }
+            } else {
+                System.out.println("JavaMailSender is not configured. Email will not be sent.");
+            }
+
+            // Log email content (for development/testing)
+            System.out.println("=== New Contact Notification Email ===");
+            System.out.println("To: " + salesEmail);
+            System.out.println("Subject: " + subject);
+            System.out.println("Body:\n" + body);
+            System.out.println("================================================");
+
+        } catch (Exception e) {
+            // Log error but don't fail the contact submission
+            System.err.println("Failed to prepare new contact notification email: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Send new proposal notification email to Client
+     * @param clientUser Client user entity
+     * @param proposalTitle Proposal title
+     * @param proposalLink Proposal link (S3 key or URL)
+     * @param opportunityTitle Opportunity title (optional)
+     */
+    public void sendNewProposalNotificationEmail(User clientUser, String proposalTitle, String proposalLink, String opportunityTitle) {
+        try {
+            String clientName = clientUser.getFullName() != null ? clientUser.getFullName() : "Client";
+            String clientEmail = clientUser.getEmail() != null ? clientUser.getEmail() : null;
+            
+            if (clientEmail == null || clientEmail.isEmpty()) {
+                System.err.println("Client email is missing. Cannot send proposal notification email.");
+                return;
+            }
+
+            // Build email subject
+            String subject = "New Proposal Available - " + proposalTitle;
+
+            // Build email body
+            StringBuilder bodyBuilder = new StringBuilder();
+            bodyBuilder.append("Dear ").append(clientName).append(",\n\n");
+            bodyBuilder.append("We are pleased to inform you that a new proposal has been approved and is now available for your review.\n\n");
+            
+            // Proposal information
+            bodyBuilder.append("Proposal Details:\n");
+            bodyBuilder.append("- Title: ").append(proposalTitle).append("\n");
+            if (opportunityTitle != null && !opportunityTitle.isEmpty()) {
+                bodyBuilder.append("- Opportunity: ").append(opportunityTitle).append("\n");
+            }
+            bodyBuilder.append("\n");
+
+            // Login information
+            String loginUrl = baseUrl + "/client/login";
+            bodyBuilder.append("Please log in to your account to review the proposal:\n");
+            bodyBuilder.append(loginUrl).append("\n\n");
+
+            bodyBuilder.append("You can access your proposals and provide feedback through your client portal.\n\n");
+            bodyBuilder.append("If you have any questions, please feel free to contact us.\n\n");
+            bodyBuilder.append("Best regards,\n");
+            bodyBuilder.append(smtpFromName).append("\n");
+            bodyBuilder.append("SkillBridge Team");
+
+            String body = bodyBuilder.toString();
+
+            // Send email if JavaMailSender is configured
+            if (javaMailSender != null) {
+                try {
+                    SimpleMailMessage message = new SimpleMailMessage();
+                    // Validate and format from email properly
+                    String fromEmailAddress = smtpFromEmail;
+                    if (fromEmailAddress == null || fromEmailAddress.trim().isEmpty()) {
+                        fromEmailAddress = "noreply@skillbridge.com";
+                    } else if (!fromEmailAddress.contains("@")) {
+                        // If from email doesn't have @, use a default format
+                        fromEmailAddress = fromEmailAddress + "@skillbridge.com";
+                    }
+                    // Validate email format
+                    if (!fromEmailAddress.matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
+                        System.err.println("Invalid from email format: " + fromEmailAddress);
+                        fromEmailAddress = "noreply@skillbridge.com";
+                    }
+                    message.setFrom(fromEmailAddress);
+                    message.setTo(clientEmail);
+                    message.setSubject(subject);
+                    message.setText(body);
+                    javaMailSender.send(message);
+                    System.out.println("New proposal notification email sent successfully to Client: " + clientEmail);
+                    System.out.println("From: " + fromEmailAddress);
+                } catch (Exception e) {
+                    // Log detailed error information
+                    System.err.println("=== ERROR: Failed to send new proposal notification email ===");
+                    System.err.println("To: " + clientEmail);
+                    System.err.println("From: " + smtpFromEmail);
+                    System.err.println("Error: " + e.getClass().getSimpleName());
+                    System.err.println("Message: " + e.getMessage());
+                    if (e.getCause() != null) {
+                        System.err.println("Cause: " + e.getCause().getMessage());
+                    }
+                    e.printStackTrace();
+                    System.err.println("================================================");
+                    // Don't throw exception - just log and continue
+                    // This ensures proposal approval is not blocked by email sending failure
+                }
+            } else {
+                System.out.println("JavaMailSender is not configured. Email will not be sent.");
+            }
+
+            // Log email content (for development/testing)
+            System.out.println("=== New Proposal Notification Email ===");
+            System.out.println("To: " + clientEmail);
+            System.out.println("Subject: " + subject);
+            System.out.println("Body:\n" + body);
+            System.out.println("================================================");
+
+        } catch (Exception e) {
+            // Log error but don't fail the proposal approval
+            System.err.println("Failed to prepare new proposal notification email: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 

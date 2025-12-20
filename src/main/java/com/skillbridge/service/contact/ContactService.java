@@ -65,6 +65,9 @@ public class ContactService {
         // Include password in email for new users
         emailService.sendConfirmationEmail(userResult.getUser(), contact, userResult.getPlainPassword());
 
+        // Send notification email to Sales team
+        emailService.sendNewContactNotificationEmail(contactData, contact.getId());
+
         // Notify sales manager (commented out - will log instead)
         notificationService.notifySalesManager(contact);
 
