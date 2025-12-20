@@ -1091,12 +1091,6 @@ public class SalesSOWContractController {
     }
     
     /**
-     * Get events for SOW contract
-     * GET /sales/contracts/sow/{contractId}/events?type={resource|billing}&fromDate={date}&toDate={date}
-     */
-    @GetMapping("/{contractId}/events")
-    
-    /**
      * Update payment status for billing detail
      * PATCH /sales/contracts/sow/{contractId}/billing-details/{billingDetailId}/payment-status
      */

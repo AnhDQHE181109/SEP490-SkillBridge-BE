@@ -21,8 +21,11 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.skillbridge.service.common.S3Service;
 import com.skillbridge.service.common.DocumentPermissionService;
+import com.skillbridge.service.common.EmailService;
 import com.skillbridge.entity.document.DocumentMetadata;
+import com.skillbridge.entity.contact.Contact;
 import com.skillbridge.repository.document.DocumentMetadataRepository;
+import com.skillbridge.repository.contact.ContactRepository;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.time.LocalDateTime;
@@ -61,6 +64,12 @@ public class ProposalService {
 
     @Autowired
     private DocumentPermissionService documentPermissionService;
+
+    @Autowired
+    private EmailService emailService;
+
+    @Autowired
+    private ContactRepository contactRepository;
 
     @Value("${app.upload.dir:uploads/proposals}")
     private String uploadDir;
@@ -313,6 +322,46 @@ public class ProposalService {
 
         // Update opportunity status
         updateOpportunityStatus(opportunity);
+
+        // Send email notification to client when Sales Manager approves proposal
+        if ("APPROVE".equals(request.getAction())) {
+            try {
+                // Get contact from opportunity
+                if (opportunity.getContactId() != null) {
+                    Optional<Contact> contactOpt = contactRepository.findById(opportunity.getContactId());
+                    if (contactOpt.isPresent()) {
+                        Contact contact = contactOpt.get();
+                        // Get client user
+                        if (contact.getClientUserId() != null) {
+                            Optional<User> clientUserOpt = userRepository.findById(contact.getClientUserId());
+                            if (clientUserOpt.isPresent()) {
+                                User clientUser = clientUserOpt.get();
+                                // Get proposal link (S3 key or URL)
+                                String proposalLink = proposal.getLink() != null ? proposal.getLink() : "";
+                                // Get opportunity info (use opportunityId or clientName/clientCompany)
+                                String opportunityInfo = opportunity.getOpportunityId() != null ? 
+                                    opportunity.getOpportunityId() : 
+                                    (opportunity.getClientName() != null ? opportunity.getClientName() : "");
+                                if (opportunity.getClientCompany() != null && !opportunity.getClientCompany().isEmpty()) {
+                                    opportunityInfo += " (" + opportunity.getClientCompany() + ")";
+                                }
+                                // Send email notification
+                                emailService.sendNewProposalNotificationEmail(
+                                    clientUser,
+                                    proposal.getTitle() != null ? proposal.getTitle() : "Proposal",
+                                    proposalLink,
+                                    opportunityInfo
+                                );
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Log error but don't fail the proposal approval
+                System.err.println("Failed to send proposal notification email: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
 
         ProposalDTO dto = convertProposalToDTO(proposal);
         dto.setCanEdit(false); // Cannot edit after review submission

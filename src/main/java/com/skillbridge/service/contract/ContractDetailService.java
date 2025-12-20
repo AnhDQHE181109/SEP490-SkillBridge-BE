@@ -6,6 +6,7 @@ import com.skillbridge.entity.contract.*;
 import com.skillbridge.entity.document.DocumentMetadata;
 import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.repository.contract.*;
+import com.skillbridge.repository.contract.ContractInternalReviewRepository;
 import com.skillbridge.repository.document.DocumentMetadataRepository;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
@@ -61,6 +62,18 @@ public class ContractDetailService {
     
     @Autowired
     private DocumentMetadataRepository documentMetadataRepository;
+    
+    @Autowired
+    private ContractInternalReviewRepository contractInternalReviewRepository;
+    
+    @Autowired(required = false)
+    private com.skillbridge.service.sales.SOWBaselineService sowBaselineService;
+    
+    @Autowired(required = false)
+    private com.skillbridge.service.sales.CREventService crEventService;
+    
+    @Autowired(required = false)
+    private com.skillbridge.repository.contract.CRBillingEventRepository crBillingEventRepository;
     
     private final Gson gson = new Gson();
     
@@ -122,6 +135,7 @@ public class ContractDetailService {
         dto.setInvoicingCycle(contract.getInvoicingCycle() != null ? contract.getInvoicingCycle() : "Monthly");
         dto.setBillingDay(contract.getBillingDay() != null ? contract.getBillingDay() : "Last business day");
         dto.setTaxWithholding(contract.getTaxWithholding() != null ? contract.getTaxWithholding() : "10%");
+        dto.setTaxType(contract.getTaxType() != null ? contract.getTaxType() : "Included");
         
         // Legal / Compliance
         dto.setIpOwnership(contract.getIpOwnership() != null ? contract.getIpOwnership() : "Client");
@@ -372,11 +386,84 @@ public class ContractDetailService {
                 .collect(Collectors.toList());
             dto.setDeliveryItems(deliveryItemDTOs);
             
-            // Load billing details
+            // Load billing details - Use event-based calculation if baseline exists, otherwise fallback to legacy table
+            List<RetainerBillingDetailDTO> billingDetailDTOs = new ArrayList<>();
+            
+            // Try event-based approach first (if baseline exists)
+            if (sowBaselineService != null && crEventService != null && crBillingEventRepository != null) {
+                try {
+                    List<com.skillbridge.entity.contract.SOWEngagedEngineerBase> baselineEngineers = 
+                        sowBaselineService.getBaselineResources(sow.getId());
+                    
+                    if (!baselineEngineers.isEmpty()) {
+                        // Event-based: Calculate current billing from baseline + events
+                        List<com.skillbridge.entity.contract.RetainerBillingBase> baselineBillingList = 
+                            sowBaselineService.getBaselineBilling(sow.getId());
+                        
+                        // Get all unique billing months
+                        java.util.Set<LocalDate> billingMonths = new java.util.HashSet<>();
+                        for (com.skillbridge.entity.contract.RetainerBillingBase base : baselineBillingList) {
+                            if (base.getBillingMonth() != null) {
+                                billingMonths.add(base.getBillingMonth());
+                            }
+                        }
+                        
+                        // Get all billing events to find additional months
+                        List<com.skillbridge.entity.contract.CRBillingEvent> allBillingEvents = 
+                            crBillingEventRepository.findApprovedEventsBySowContractId(sow.getId());
+                        for (com.skillbridge.entity.contract.CRBillingEvent event : allBillingEvents) {
+                            if (event.getBillingMonth() != null) {
+                                billingMonths.add(event.getBillingMonth());
+                            }
+                        }
+                        
+                        // Calculate billing for each month (baseline + events)
+                        for (LocalDate month : billingMonths.stream().sorted().collect(Collectors.toList())) {
+                            BigDecimal totalAmount = crEventService.calculateCurrentBilling(sow.getId(), month);
+                            
+                            RetainerBillingDetailDTO billingDTO = new RetainerBillingDetailDTO();
+                            billingDTO.setId(null); // No specific ID for calculated billing
+                            billingDTO.setPaymentDate(month != null ? formatDate(month) : null);
+                            billingDTO.setAmount(formatCurrency(totalAmount != null ? totalAmount : BigDecimal.ZERO));
+                            
+                            // Get description from baseline or events
+                            String description = "";
+                            var baselineOpt = baselineBillingList.stream()
+                                .filter(b -> b.getBillingMonth() != null && b.getBillingMonth().equals(month))
+                                .findFirst();
+                            if (baselineOpt.isPresent() && baselineOpt.get().getDescription() != null) {
+                                description = baselineOpt.get().getDescription();
+                            }
+                            
+                            // Add event descriptions
+                            List<com.skillbridge.entity.contract.CRBillingEvent> monthEvents = allBillingEvents.stream()
+                                .filter(e -> e.getBillingMonth() != null && e.getBillingMonth().equals(month))
+                                .collect(Collectors.toList());
+                            if (!monthEvents.isEmpty()) {
+                                if (!description.isEmpty()) description += "; ";
+                                description += monthEvents.stream()
+                                    .map(e -> e.getDescription() != null ? e.getDescription() : "")
+                                    .collect(Collectors.joining("; "));
+                            }
+                            
+                            billingDTO.setDeliveryNote(description);
+                            billingDetailDTOs.add(billingDTO);
+                        }
+                    }
+                } catch (Exception e) {
+                    // If event-based calculation fails, fallback to legacy table
+                    System.err.println("Error calculating event-based billing for contract " + sow.getId() + ": " + e.getMessage());
+                }
+            }
+            
+            // Fallback to legacy table if event-based calculation didn't produce results
+            if (billingDetailDTOs.isEmpty()) {
             List<RetainerBillingDetail> billingDetails = retainerBillingDetailRepository.findBySowContractIdOrderByPaymentDateDesc(sow.getId());
-            List<RetainerBillingDetailDTO> billingDetailDTOs = billingDetails.stream()
+                billingDetailDTOs = billingDetails.stream()
                 .map(this::convertToRetainerBillingDTO)
                 .collect(Collectors.toList());
+            }
+            
             dto.setRetainerBillingDetails(billingDetailDTOs);
         }
         
@@ -572,6 +659,9 @@ public class ContractDetailService {
         // Get old status for history
         Contract.ContractStatus oldStatus = contract.getStatus();
         
+        // Clear internal review records so UI does not show Client Under Review after RFC
+        contractInternalReviewRepository.deleteByContractIdAndContractType(contractId, "MSA");
+        
         // Update contract status to Request_for_Change
         contract.setStatus(Contract.ContractStatus.Request_for_Change);
         contractRepository.save(contract);
@@ -590,6 +680,9 @@ public class ContractDetailService {
     private void addCommentToSOW(SOWContract contract, Integer contractId, Integer clientUserId, String comment) {
         // Get old status for history
         SOWContract.SOWContractStatus oldStatus = contract.getStatus();
+        
+        // Clear internal review records so UI does not show Client Under Review after RFC
+        contractInternalReviewRepository.deleteBySowContractIdAndContractType(contractId, "SOW");
         
         // Update contract status to Request_for_Change
         contract.setStatus(SOWContract.SOWContractStatus.Request_for_Change);
@@ -753,6 +846,9 @@ public class ContractDetailService {
         dto.setEffectiveUntil(formatDate(changeRequest.getEffectiveUntil()));
         dto.setAmount(formatCurrency(changeRequest.getAmount()));
         dto.setStatus(changeRequest.getStatus());
+        // Map cost fields (fallback to amount formatting)
+        dto.setExpectedExtraCost(formatCurrency(changeRequest.getExpectedExtraCost()));
+        dto.setCostEstimatedByLandbridge(formatCurrency(changeRequest.getCostEstimatedByLandbridge()));
         return dto;
     }
     

@@ -27,6 +27,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import com.skillbridge.service.common.S3Service;
+import com.skillbridge.service.common.EmailService;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,6 +39,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -121,6 +123,9 @@ public class SalesSOWContractService {
     
     @Autowired
     private CRBillingEventRepository crBillingEventRepository;
+    
+    @Autowired
+    private EmailService emailService;
     
     private final Gson gson = new Gson();
     
@@ -215,15 +220,19 @@ public class SalesSOWContractService {
                 throw new RuntimeException("At least one billing detail is required for Retainer SOW");
             }
             
-            // Calculate total value from billing details
+            // Calculate total value from billing details.
+            // IMPORTANT: For SOW + CR we treat incoming amount as already-final
+            // (MSA tax logic is applied on the frontend). Backend must NOT
+            // re-apply tax here.
             for (CreateSOWRequest.BillingDetailDTO detail : request.getBillingDetails()) {
                 if (detail.getAmount() != null) {
-                    totalValue = totalValue.add(BigDecimal.valueOf(detail.getAmount()));
+                    BigDecimal lineTotal = BigDecimal.valueOf(detail.getAmount());
+                    totalValue = totalValue.add(lineTotal);
                 }
             }
             
             // Create billing details (manual input, no longer auto-generated)
-            createRetainerBillingDetails(contract.getId(), request.getBillingDetails());
+            createRetainerBillingDetails(contract.getId(), request.getBillingDetails(), parentMSA);
             
             // Create engaged engineers
             if (request.getEngagedEngineers() != null && !request.getEngagedEngineers().isEmpty()) {
@@ -236,23 +245,24 @@ public class SalesSOWContractService {
                 throw new RuntimeException("At least one milestone deliverable is required for Fixed Price SOW");
             }
             
-            // Use contractValue if provided, otherwise calculate from billing details
-            if (request.getContractValue() != null && request.getContractValue() > 0) {
-                totalValue = BigDecimal.valueOf(request.getContractValue());
-            } else {
-                // Calculate total value from billing details
+            // Use contractValue if provided, otherwise calculate from billing details (Total Amount including tax)
+            // Note: For consistency, we prefer calculating from billing details sum to ensure contract value matches total billing
                 if (request.getBillingDetails() != null && !request.getBillingDetails().isEmpty()) {
+                // Calculate total value from billing details (all amounts already include tax from frontend)
                     for (CreateSOWRequest.BillingDetailDTO detail : request.getBillingDetails()) {
                         if (detail.getAmount() != null) {
-                            totalValue = totalValue.add(BigDecimal.valueOf(detail.getAmount()));
+                        BigDecimal lineTotal = BigDecimal.valueOf(detail.getAmount());
+                        totalValue = totalValue.add(lineTotal);
                         }
                     }
-                }
+            } else if (request.getContractValue() != null && request.getContractValue() > 0) {
+                // Fallback to contractValue if billing details are not provided
+                totalValue = BigDecimal.valueOf(request.getContractValue());
             }
             
             // Create billing details from milestone deliverables
             if (request.getBillingDetails() != null && !request.getBillingDetails().isEmpty()) {
-                createFixedPriceBillingDetails(contract.getId(), request.getBillingDetails());
+                createFixedPriceBillingDetails(contract.getId(), request.getBillingDetails(), parentMSA);
             } else {
                 // Auto-generate billing details from milestone deliverables and contract value
                 if (request.getContractValue() != null && request.getContractValue() > 0) {
@@ -319,8 +329,8 @@ public class SalesSOWContractService {
             // When approved, change status to "Client Under Review" (mapped from Under_Review enum)
             contract.setStatus(SOWContract.SOWContractStatus.Under_Review); // Maps to "Client Under Review" in display
         } else if ("REQUEST_REVISION".equalsIgnoreCase(action)) {
-            // When request revision, change status back to Draft to allow editing
-            contract.setStatus(SOWContract.SOWContractStatus.Draft);
+            // When requesting revision, move contract to Request for Change
+            contract.setStatus(SOWContract.SOWContractStatus.Request_for_Change);
         }
         
         contract = sowContractRepository.save(contract);
@@ -340,7 +350,8 @@ public class SalesSOWContractService {
         // Convert to DTO
         SOWContractDTO dto = new SOWContractDTO();
         dto.setId(contract.getId());
-        dto.setContractId(generateContractId(contract.getId(), contract.getCreatedAt()));
+        String contractIdForDto = generateContractId(contract.getId(), contract.getCreatedAt());
+        dto.setContractId(contractIdForDto);
         dto.setContractName(contract.getContractName());
         // Map status for display: Under_Review -> "Client Under Review" when approved
         String statusDisplay = contract.getStatus().name().replace("_", " ");
