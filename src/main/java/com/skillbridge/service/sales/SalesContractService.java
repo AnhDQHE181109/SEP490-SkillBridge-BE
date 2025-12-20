@@ -8,10 +8,12 @@ import com.skillbridge.entity.auth.User;
 import com.skillbridge.entity.contract.Contract;
 import com.skillbridge.entity.contract.ChangeRequest;
 import com.skillbridge.entity.contract.SOWContract;
+import com.skillbridge.entity.contract.ProjectCloseRequest;
 import com.skillbridge.entity.contract.ContractInternalReview;
 import com.skillbridge.repository.auth.UserRepository;
 import com.skillbridge.repository.contract.ContractRepository;
 import com.skillbridge.repository.contract.SOWContractRepository;
+import com.skillbridge.repository.contract.ProjectCloseRequestRepository;
 import com.skillbridge.repository.contract.ContractInternalReviewRepository;
 import com.skillbridge.repository.contract.ChangeRequestRepository;
 import jakarta.persistence.criteria.Predicate;
@@ -50,6 +52,9 @@ public class SalesContractService {
     private UserRepository userRepository;
 
     @Autowired
+    private ProjectCloseRequestRepository projectCloseRequestRepository;
+
+    @Autowired
     private ContractInternalReviewRepository contractInternalReviewRepository;
 
     @Autowired
@@ -77,15 +82,18 @@ public class SalesContractService {
         // Sales Manager: assigneeUserId remains null (sees all contracts)
         
         // Build specifications for both MSA and SOW contracts
-        Specification<Contract> msaSpec = buildMSASpecification(search, status, assigneeUserId);
-        Specification<SOWContract> sowSpec = buildSOWSpecification(search, status, assigneeUserId);
+        boolean includeMSA = (type == null || type.trim().isEmpty() || "All".equalsIgnoreCase(type) || "MSA".equalsIgnoreCase(type));
+        boolean includeSOW = (type == null || type.trim().isEmpty() || "All".equalsIgnoreCase(type) || "SOW".equalsIgnoreCase(type));
+
+        Specification<Contract> msaSpec = includeMSA ? buildMSASpecification(search, status, assigneeUserId) : null;
+        Specification<SOWContract> sowSpec = includeSOW ? buildSOWSpecification(search, status, assigneeUserId) : null;
         
         // Query both MSA and SOW contracts (fetch all matching, then combine and paginate)
         // Note: We fetch all matching contracts because we need to combine and sort them
         Pageable pageable = PageRequest.of(0, 10000, Sort.by("createdAt").descending());
         
-        Page<Contract> msaPage = contractRepository.findAll(msaSpec, pageable);
-        Page<SOWContract> sowPage = sowContractRepository.findAll(sowSpec, pageable);
+        Page<Contract> msaPage = includeMSA ? contractRepository.findAll(msaSpec, pageable) : Page.empty();
+        Page<SOWContract> sowPage = includeSOW ? sowContractRepository.findAll(sowSpec, pageable) : Page.empty();
         
         // Convert to DTOs
         List<ContractListItemDTO> contracts = new ArrayList<>();
@@ -240,6 +248,7 @@ public class SalesContractService {
         dto.setFormattedValue(formatValue(contract.getValue()));
         dto.setStatus(resolveStatusDisplay("MSA", contract.getStatus().name(), contract.getId()));
         dto.setAssignee(contract.getAssigneeId());
+        dto.setCloseRequestPending(false); // MSAs never have close requests
         
         // Load client name and email from users table
         if (contract.getClientId() != null) {
@@ -296,10 +305,12 @@ public class SalesContractService {
         dto.setPeriodStart(formatDateStart(sowContract.getPeriodStart()));
         dto.setPeriodEnd(formatDateEnd(sowContract.getPeriodEnd()));
         dto.setPeriod(formatPeriod(sowContract.getPeriodStart(), sowContract.getPeriodEnd()));
-        dto.setValue(sowContract.getValue());
-        dto.setFormattedValue(formatValue(sowContract.getValue()));
+        BigDecimal totalValue = calculateSowTotalValue(sowContract.getId(), sowContract.getValue());
+        dto.setValue(totalValue);
+        dto.setFormattedValue(formatValue(totalValue));
         dto.setStatus(resolveStatusDisplay("SOW", sowContract.getStatus().name(), sowContract.getId()));
         dto.setAssignee(sowContract.getAssigneeId());
+        dto.setCloseRequestPending(false);
         
         // Load client name and email from users table
         if (sowContract.getClientId() != null) {
@@ -316,6 +327,12 @@ public class SalesContractService {
             });
         }
         
+        // Attach latest Project Close Request info (if any)
+        projectCloseRequestRepository.findFirstBySowIdOrderByCreatedAtDesc(sowContract.getId()).ifPresent(closeRequest -> {
+            dto.setCloseRequestStatus(closeRequest.getStatus().name());
+            dto.setCloseRequestPending(closeRequest.getStatus() == ProjectCloseRequest.ProjectCloseRequestStatus.Pending);
+        });
+
         dto.setCreatedAt(sowContract.getCreatedAt() != null ? sowContract.getCreatedAt().toString() : null);
         return dto;
     }
@@ -403,6 +420,8 @@ public class SalesContractService {
     
     /**
      * Format value: "¥X,XXX,XXX" or "-"
+     * Note: The value parameter is already the total amount including tax (calculated on frontend).
+     * Backend only formats the value for display purposes.
      */
     private String formatValue(BigDecimal value) {
         if (value == null) {
@@ -410,6 +429,35 @@ public class SalesContractService {
         }
         DecimalFormat formatter = new DecimalFormat("¥#,###");
         return formatter.format(value);
+    }
+
+    /**
+     * Calculate SOW total value as base value plus all approved/active CR amounts.
+     * We only add change requests that are Active (client approved).
+     * Note: Both baseValue and CR amounts are already total amounts including tax (calculated on frontend).
+     * Backend only sums them up for display purposes.
+     */
+    private BigDecimal calculateSowTotalValue(Integer sowContractId, BigDecimal baseValue) {
+        BigDecimal total = baseValue != null ? baseValue : BigDecimal.ZERO;
+
+        if (sowContractId == null) {
+            return total;
+        }
+
+        try {
+            List<ChangeRequest> changeRequests = changeRequestRepository.findBySowContractIdOrderByCreatedAtDesc(sowContractId);
+            for (ChangeRequest cr : changeRequests) {
+                if (cr.getStatus() != null
+                    && "Active".equalsIgnoreCase(cr.getStatus())
+                    && cr.getAmount() != null) {
+                    total = total.add(cr.getAmount());
+                }
+            }
+        } catch (Exception ignored) {
+            // If CR lookup fails, fall back to base value to avoid breaking list rendering
+        }
+
+        return total;
     }
 }
 

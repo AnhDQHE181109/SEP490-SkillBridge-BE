@@ -3,9 +3,13 @@ package com.skillbridge.service.contract;
 import com.skillbridge.dto.contract.response.ContractListItemDTO;
 import com.skillbridge.dto.contract.response.ContractListResponse;
 import com.skillbridge.entity.contract.Contract;
+import com.skillbridge.entity.contract.ChangeRequest;
 import com.skillbridge.entity.contract.SOWContract;
+import com.skillbridge.entity.contract.ProjectCloseRequest;
 import com.skillbridge.repository.contract.ContractRepository;
 import com.skillbridge.repository.contract.SOWContractRepository;
+import com.skillbridge.repository.contract.ProjectCloseRequestRepository;
+import com.skillbridge.repository.contract.ChangeRequestRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -33,6 +37,12 @@ public class ContractListService {
     
     @Autowired
     private SOWContractRepository sowContractRepository;
+    
+    @Autowired
+    private ProjectCloseRequestRepository projectCloseRequestRepository;
+
+    @Autowired
+    private ChangeRequestRepository changeRequestRepository;
     
     public ContractListResponse getContracts(
         Integer clientUserId,
@@ -161,6 +171,8 @@ public class ContractListService {
         dto.setStatus(contract.getStatus().name().replace("_", " "));
         dto.setAssignee(contract.getAssigneeId());
         dto.setCreatedAt(contract.getCreatedAt() != null ? contract.getCreatedAt().toString() : null);
+        // MSA contracts do not have project close requests
+        dto.setCloseRequestPending(false);
         
         return dto;
     }
@@ -175,11 +187,19 @@ public class ContractListService {
         dto.setPeriodStart(formatDate(sow.getPeriodStart()));
         dto.setPeriodEnd(formatDate(sow.getPeriodEnd()));
         dto.setPeriod(formatPeriod(sow.getPeriodStart(), sow.getPeriodEnd()));
-        dto.setValue(sow.getValue());
-        dto.setFormattedValue(formatValue(sow.getValue()));
+        BigDecimal totalValue = calculateSowTotalValue(sow.getId(), sow.getValue());
+        dto.setValue(totalValue);
+        dto.setFormattedValue(formatValue(totalValue));
         dto.setStatus(sow.getStatus().name().replace("_", " "));
         dto.setAssignee(sow.getAssigneeId());
         dto.setCreatedAt(sow.getCreatedAt() != null ? sow.getCreatedAt().toString() : null);
+        
+        // Project Close Request indicators (latest request for this SOW)
+        dto.setCloseRequestPending(false);
+        projectCloseRequestRepository.findFirstBySowIdOrderByCreatedAtDesc(sow.getId()).ifPresent(closeRequest -> {
+            dto.setCloseRequestStatus(closeRequest.getStatus().name());
+            dto.setCloseRequestPending(closeRequest.getStatus() == ProjectCloseRequest.ProjectCloseRequestStatus.Pending);
+        });
         
         return dto;
     }
@@ -210,6 +230,39 @@ public class ContractListService {
         return formatDate(start) + "-" + formatDate(end);
     }
     
+    /**
+     * Calculate SOW total value = base value + approved/active CR amounts.
+     * Note: Both baseValue and CR amounts are already total amounts including tax (calculated on frontend).
+     * Backend only sums them up for display purposes.
+     */
+    private BigDecimal calculateSowTotalValue(Integer sowContractId, BigDecimal baseValue) {
+        BigDecimal total = baseValue != null ? baseValue : BigDecimal.ZERO;
+
+        if (sowContractId == null) {
+            return total;
+        }
+
+        try {
+            List<ChangeRequest> changeRequests = changeRequestRepository.findBySowContractIdOrderByCreatedAtDesc(sowContractId);
+            for (ChangeRequest cr : changeRequests) {
+                if (cr.getStatus() != null
+                    && "Active".equalsIgnoreCase(cr.getStatus())
+                    && cr.getAmount() != null) {
+                    total = total.add(cr.getAmount());
+                }
+            }
+        } catch (Exception ignored) {
+            // Fall back to base value if CR lookup fails
+        }
+
+        return total;
+    }
+    
+    /**
+     * Format value: "¥X,XXX,XXX" or "-"
+     * Note: The value parameter is already the total amount including tax (calculated on frontend).
+     * Backend only formats the value for display purposes.
+     */
     private String formatValue(BigDecimal value) {
         if (value == null) return "-";
         DecimalFormat formatter = new DecimalFormat("¥#,###");
