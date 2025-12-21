@@ -362,6 +362,30 @@ public class SalesSOWContractService {
         }
         dto.setStatus(statusDisplay);
         
+        // Send email notification to client when Sales Manager approves contract
+        if ("APPROVE".equalsIgnoreCase(action)) {
+            try {
+                // Get client user
+                if (contract.getClientId() != null) {
+                    Optional<User> clientUserOpt = userRepository.findById(contract.getClientId());
+                    if (clientUserOpt.isPresent()) {
+                        User clientUser = clientUserOpt.get();
+                        // Send email notification
+                        emailService.sendContractPendingApprovalNotificationEmail(
+                            clientUser,
+                            "SOW",
+                            contract.getContractName() != null ? contract.getContractName() : "SOW Contract",
+                            contractIdForDto
+                        );
+                    }
+                }
+            } catch (Exception e) {
+                // Log error but don't fail the contract approval
+                System.err.println("Failed to send contract pending approval notification email: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+        
         return dto;
     }
     
@@ -497,7 +521,12 @@ public class SalesSOWContractService {
     }
     
     /**
-     * Update SOW contract (for Request_for_Change status only - allows updating Engaged Engineers and Billing Details)
+     * Update SOW contract (Draft or Request_for_Change)
+     * - Retainer: supports RFC edits to engineers & billing (existing behavior)
+     * - Fixed Price: now supports RFC edits to milestone deliverables & billing
+     * - Role-based transitions in RFC:
+     *     Sales Rep -> Internal Review (Under_Review)
+     *     Sales Manager -> Client Under Review (Under_Review + internal review APPROVE record)
      */
     @Transactional
     public SOWContractDTO updateSOWContract(Integer contractId, CreateSOWRequest request, MultipartFile[] attachments, User currentUser) {
@@ -518,51 +547,12 @@ public class SalesSOWContractService {
             throw new RuntimeException("SOW Contract can only be updated when status is Draft or Request for Change. Current status: " + contract.getStatus().name());
         }
         
-        // When status is Request_for_Change, only allow updating Engaged Engineers and Billing Details for Retainer contracts
-        if (contract.getStatus() == SOWContract.SOWContractStatus.Request_for_Change) {
-            if (!"Retainer".equals(contract.getEngagementType())) {
-                throw new RuntimeException("Only Retainer SOW contracts can be updated when status is Request for Change");
-            }
-            
-            // Update Engaged Engineers if provided
-            if (request.getEngagedEngineers() != null && !request.getEngagedEngineers().isEmpty()) {
-                // Delete existing engaged engineers for future dates (after today)
-                LocalDate today = LocalDate.now();
-                List<SOWEngagedEngineer> existingEngineers = sowEngagedEngineerRepository.findBySowContractId(contractId);
-                for (SOWEngagedEngineer existing : existingEngineers) {
-                    // Delete engineers with start date in the future
-                    if (existing.getStartDate() != null && existing.getStartDate().isAfter(today)) {
-                        sowEngagedEngineerRepository.delete(existing);
-                    }
-                }
-                
-                // Create new engaged engineers from request
-                createSOWEngagedEngineers(contractId, request.getEngagedEngineers());
-            }
-            
-            // Update Billing Details if provided (for Retainer)
-            if (request.getBillingDetails() != null && !request.getBillingDetails().isEmpty()) {
-                // Delete existing billing details for future dates (after today)
-                LocalDate today = LocalDate.now();
-                List<RetainerBillingDetail> existingBilling = retainerBillingDetailRepository.findBySowContractIdOrderByPaymentDateDesc(contractId);
-                for (RetainerBillingDetail existing : existingBilling) {
-                    // Delete billing with payment date in the future
-                    if (existing.getPaymentDate() != null && existing.getPaymentDate().isAfter(today)) {
-                        retainerBillingDetailRepository.delete(existing);
-                    }
-                }
-                
-                // Create new billing details from request using existing method
-                createRetainerBillingDetails(contractId, request.getBillingDetails());
-            }
-            
-            // Create history entry
-            createHistoryEntry(contract.getId(), "UPDATED", 
-                "SOW Contract Engaged Engineers and Billing Details updated by " + currentUser.getFullName() + " (Request for Change)", 
-                null, null, currentUser.getId());
-        } else {
-            // For Draft status, allow full update (similar to create but update existing)
-            // Update basic contract fields
+        boolean isRequestForChange = contract.getStatus() == SOWContract.SOWContractStatus.Request_for_Change;
+        String engagementType = contract.getEngagementType() != null ? contract.getEngagementType() : "";
+        boolean isRetainer = "Retainer".equals(engagementType);
+        boolean isFixedPrice = "Fixed Price".equals(engagementType) || "Fixed_Price".equals(engagementType);
+        
+        // === Basic fields (Draft or RFC) ===
             if (request.getProjectName() != null) {
                 contract.setProjectName(request.getProjectName());
                 contract.setContractName("SOW Contract - " + contract.getProjectName());
@@ -584,31 +574,106 @@ public class SalesSOWContractService {
                 contract.setLandbridgeContactEmail(assignee.getEmail());
             }
             
-            // Update Engaged Engineers if provided (for Retainer)
-            if (request.getEngagedEngineers() != null && !request.getEngagedEngineers().isEmpty() && "Retainer".equals(contract.getEngagementType())) {
-                // Delete all existing engaged engineers
+        // Update contract value (Fixed Price)
+        if (request.getContractValue() != null) {
+            contract.setValue(BigDecimal.valueOf(request.getContractValue()));
+        }
+        
+        // === Retainer: engineers & billing (Draft or RFC) ===
+        if (isRetainer && request.getEngagedEngineers() != null && !request.getEngagedEngineers().isEmpty()) {
                 List<SOWEngagedEngineer> existingEngineers = sowEngagedEngineerRepository.findBySowContractId(contractId);
+            if (isRequestForChange) {
+                LocalDate today = LocalDate.now();
+                for (SOWEngagedEngineer existing : existingEngineers) {
+                    if (existing.getStartDate() != null && existing.getStartDate().isAfter(today)) {
+                    sowEngagedEngineerRepository.delete(existing);
+                }
+                }
+            } else {
                 for (SOWEngagedEngineer existing : existingEngineers) {
                     sowEngagedEngineerRepository.delete(existing);
                 }
-                // Create new engaged engineers from request
+            }
                 createSOWEngagedEngineers(contractId, request.getEngagedEngineers());
             }
             
-            // Update Billing Details if provided (for Retainer)
-            if (request.getBillingDetails() != null && !request.getBillingDetails().isEmpty() && "Retainer".equals(contract.getEngagementType())) {
-                // Delete all existing billing details
+        if (isRetainer && request.getBillingDetails() != null && !request.getBillingDetails().isEmpty()) {
+            // Load parent MSA for tax info
+            Contract parentMSA = null;
+            if (contract.getParentMsaId() != null) {
+                parentMSA = contractRepository.findById(contract.getParentMsaId()).orElse(null);
+            }
                 List<RetainerBillingDetail> existingBilling = retainerBillingDetailRepository.findBySowContractIdOrderByPaymentDateDesc(contractId);
+            if (isRequestForChange) {
+                LocalDate today = LocalDate.now();
+                for (RetainerBillingDetail existing : existingBilling) {
+                    if (existing.getPaymentDate() != null && existing.getPaymentDate().isAfter(today)) {
+                    retainerBillingDetailRepository.delete(existing);
+                }
+                }
+            } else {
                 for (RetainerBillingDetail existing : existingBilling) {
                     retainerBillingDetailRepository.delete(existing);
                 }
-                // Create new billing details from request
-                createRetainerBillingDetails(contractId, request.getBillingDetails());
+            }
+            createRetainerBillingDetails(contractId, request.getBillingDetails(), parentMSA);
+        }
+        
+        // === Fixed Price: milestones & billing (Draft or RFC) ===
+        if (isFixedPrice && request.getMilestoneDeliverables() != null && !request.getMilestoneDeliverables().isEmpty()) {
+            List<MilestoneDeliverable> existingMilestones = milestoneDeliverableRepository.findBySowContractIdOrderByPlannedEndAsc(contractId);
+            for (MilestoneDeliverable existing : existingMilestones) {
+                milestoneDeliverableRepository.delete(existing);
+            }
+            createMilestoneDeliverables(contractId, request.getMilestoneDeliverables());
+        }
+        
+        if (isFixedPrice && request.getBillingDetails() != null && !request.getBillingDetails().isEmpty()) {
+            // Load parent MSA for tax info
+            Contract parentMSA = null;
+            if (contract.getParentMsaId() != null) {
+                parentMSA = contractRepository.findById(contract.getParentMsaId()).orElse(null);
+            }
+            List<FixedPriceBillingDetail> existingBilling = fixedPriceBillingDetailRepository.findBySowContractIdOrderByInvoiceDateDesc(contractId);
+            for (FixedPriceBillingDetail existing : existingBilling) {
+                fixedPriceBillingDetailRepository.delete(existing);
+            }
+            createFixedPriceBillingDetails(contractId, request.getBillingDetails(), parentMSA);
+        }
+        
+        // Delivery Items (Retainer legacy)
+        if (request.getDeliveryItems() != null && !request.getDeliveryItems().isEmpty()) {
+            List<DeliveryItem> existingItems = deliveryItemRepository.findBySowContractIdOrderByPaymentDateDesc(contractId);
+            for (DeliveryItem existing : existingItems) {
+                deliveryItemRepository.delete(existing);
+            }
+            createDeliveryItems(contractId, request.getDeliveryItems());
             }
             
             contract = sowContractRepository.save(contract);
             
-            // Create history entry
+        // Status transitions for RFC
+        if (isRequestForChange) {
+            if ("SALES_REP".equals(currentUser.getRole())) {
+                // Sales Rep: move to Internal Review only
+                contract.setStatus(SOWContract.SOWContractStatus.Under_Review);
+            } else if ("SALES_MANAGER".equals(currentUser.getRole())) {
+                // Sales Manager: move to Client Under Review (resolve as Under_Review + APPROVE review)
+                contract.setStatus(SOWContract.SOWContractStatus.Under_Review);
+                ContractInternalReview review = new ContractInternalReview();
+                review.setSowContractId(contract.getId());
+                review.setContractType("SOW");
+                review.setReviewerId(currentUser.getId());
+                review.setReviewAction("APPROVE");
+                review.setReviewNotes("Auto-approved by Sales Manager on update");
+                contractInternalReviewRepository.save(review);
+            }
+            contract = sowContractRepository.save(contract);
+            
+            createHistoryEntry(contract.getId(), "UPDATED", 
+                "SOW Contract updated by " + currentUser.getFullName() + " (Request for Change)", 
+                null, null, currentUser.getId());
+        } else {
             createHistoryEntry(contract.getId(), "UPDATED", 
                 "SOW Contract updated by " + currentUser.getFullName(), 
                 null, null, currentUser.getId());
@@ -1118,6 +1183,12 @@ public class SalesSOWContractService {
         dto.setInvoicingCycle(contract.getInvoicingCycle());
         dto.setBillingDay(contract.getBillingDay());
         dto.setTaxWithholding(contract.getTaxWithholding());
+        // Set taxType from parent MSA (SOW inherits tax settings from MSA)
+        if (parentMSA != null) {
+            dto.setTaxType(parentMSA.getTaxType());
+        } else {
+            dto.setTaxType(null); // Default to null if no parent MSA
+        }
         dto.setIpOwnership(contract.getIpOwnership());
         dto.setGoverningLaw(contract.getGoverningLaw());
         
@@ -1258,14 +1329,21 @@ public class SalesSOWContractService {
     
     /**
      * Create retainer billing details
+     * Stores Total Amount (including tax) based on parent MSA tax settings
      */
-    private void createRetainerBillingDetails(Integer sowContractId, List<CreateSOWRequest.BillingDetailDTO> billingDetails) {
+    private void createRetainerBillingDetails(Integer sowContractId, List<CreateSOWRequest.BillingDetailDTO> billingDetails, Contract parentMSA) {
         for (CreateSOWRequest.BillingDetailDTO detail : billingDetails) {
+            if (detail.getAmount() == null) {
+                continue;
+            }
             RetainerBillingDetail billingDetail = new RetainerBillingDetail();
             billingDetail.setSowContractId(sowContractId);
             billingDetail.setPaymentDate(LocalDate.parse(detail.getPaymentDate()));
             billingDetail.setDeliveryNote(detail.getDeliveryNote());
-            billingDetail.setAmount(BigDecimal.valueOf(detail.getAmount()));
+            // For SOW Retainer billing, frontend already sends the final amount
+            // (including tax logic according to parent MSA). Do not re-apply tax here.
+            BigDecimal finalAmount = BigDecimal.valueOf(detail.getAmount());
+            billingDetail.setAmount(finalAmount);
             retainerBillingDetailRepository.save(billingDetail);
         }
     }
@@ -1331,6 +1409,7 @@ public class SalesSOWContractService {
     
     /**
      * Auto-generate retainer billing details from delivery items
+     * (Legacy path - keep as-is, amounts are assumed to be total amounts)
      */
     private void autoGenerateRetainerBillingDetails(Integer sowContractId, List<CreateSOWRequest.DeliveryItemDTO> deliveryItems) {
         for (CreateSOWRequest.DeliveryItemDTO item : deliveryItems) {
@@ -1345,14 +1424,21 @@ public class SalesSOWContractService {
     
     /**
      * Create fixed price billing details
+     * Stores Total Amount (including tax) based on parent MSA tax settings
      */
-    private void createFixedPriceBillingDetails(Integer sowContractId, List<CreateSOWRequest.BillingDetailDTO> billingDetails) {
+    private void createFixedPriceBillingDetails(Integer sowContractId, List<CreateSOWRequest.BillingDetailDTO> billingDetails, Contract parentMSA) {
         for (CreateSOWRequest.BillingDetailDTO detail : billingDetails) {
+            if (detail.getAmount() == null) {
+                continue;
+            }
             FixedPriceBillingDetail billingDetail = new FixedPriceBillingDetail();
             billingDetail.setSowContractId(sowContractId);
             billingDetail.setBillingName(detail.getBillingName() != null ? detail.getBillingName() : "Payment");
             billingDetail.setMilestone(detail.getMilestone());
-            billingDetail.setAmount(BigDecimal.valueOf(detail.getAmount()));
+            // For SOW Fixed Price billing, frontend already sends the final amount
+            // (including tax logic according to parent MSA). Do not re-apply tax here.
+            BigDecimal finalAmount = BigDecimal.valueOf(detail.getAmount());
+            billingDetail.setAmount(finalAmount);
             billingDetail.setPercentage(detail.getPercentage() != null ? BigDecimal.valueOf(detail.getPercentage()) : null);
             billingDetail.setInvoiceDate(LocalDate.parse(detail.getPaymentDate())); // Using paymentDate as invoiceDate
             fixedPriceBillingDetailRepository.save(billingDetail);
@@ -1381,6 +1467,52 @@ public class SalesSOWContractService {
             }
             fixedPriceBillingDetailRepository.save(billingDetail);
         }
+    }
+    
+    /**
+     * Parse tax rate from taxWithholding string (e.g., "10%" or "10")
+     */
+    private BigDecimal parseTaxRate(String taxWithholding) {
+        if (taxWithholding == null) {
+            return BigDecimal.ZERO;
+        }
+        String trimmed = taxWithholding.trim();
+        if (trimmed.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        if (trimmed.endsWith("%")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1).trim();
+        }
+        try {
+            return new BigDecimal(trimmed);
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+    /**
+     * Apply tax to input amount based on parent MSA tax settings.
+     * - If taxRate = 0 or parentMSA is null → return inputAmount
+     * - If taxType = EXCLUDED → total = input + tax
+     * - If taxType = INCLUDED or null → total = input
+     */
+    private BigDecimal applyTax(BigDecimal inputAmount, Contract parentMSA) {
+        if (inputAmount == null || parentMSA == null) {
+            return inputAmount;
+        }
+        BigDecimal rate = parseTaxRate(parentMSA.getTaxWithholding());
+        if (rate == null || rate.compareTo(BigDecimal.ZERO) <= 0) {
+            return inputAmount;
+        }
+        String taxType = parentMSA.getTaxType();
+        if (taxType != null && taxType.equalsIgnoreCase("Excluded")) {
+            BigDecimal taxAmount = inputAmount
+                .multiply(rate)
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
+            return inputAmount.add(taxAmount);
+        }
+        // Included or unspecified → treat input as total
+        return inputAmount;
     }
     
     /**
@@ -1601,7 +1733,7 @@ public class SalesSOWContractService {
         // Calculate total amount based on engagement type
         BigDecimal totalAmount = BigDecimal.ZERO;
         if (isRetainer) {
-            // For Retainer: calculate from billing details
+            // For Retainer: calculate from billing adjustments (billingDetails)
             if (request.getBillingDetails() != null && !request.getBillingDetails().isEmpty()) {
                 for (CreateChangeRequestRequest.BillingDetailDTO billing : request.getBillingDetails()) {
                     if (billing.getAmount() != null) {
@@ -1609,6 +1741,8 @@ public class SalesSOWContractService {
                     }
                 }
             }
+            // cost_estimated_by_landbridge = tổng Billing Adjustments
+            changeRequest.setCostEstimatedByLandbridge(totalAmount);
         } else if (isFixedPrice) {
             // For Fixed Price: use additional cost from impact analysis
             if (request.getImpactAnalysis() != null && request.getImpactAnalysis().getAdditionalCost() != null) {
@@ -1616,8 +1750,15 @@ public class SalesSOWContractService {
             }
         }
         changeRequest.setAmount(totalAmount);
+        // ExpectedExtraCost chỉ set khi client tạo CR; Sales Rep không set trường này
+        boolean isClientUser = "CLIENT".equalsIgnoreCase(currentUser.getRole()) || "CLIENT_USER".equalsIgnoreCase(currentUser.getRole());
+        if (isClientUser) {
         changeRequest.setExpectedExtraCost(totalAmount);
+        }
+        // For Fixed Price, costEstimatedByLandbridge is already covered by totalAmount above; for Retainer we set explicitly.
+        if (!isRetainer) {
         changeRequest.setCostEstimatedByLandbridge(totalAmount);
+        }
         
         // Set impact analysis fields for Fixed Price
         if (isFixedPrice && request.getImpactAnalysis() != null) {
@@ -1993,6 +2134,9 @@ public class SalesSOWContractService {
         dto.setSummary(changeRequest.getSummary());
         dto.setEffectiveFrom(changeRequest.getEffectiveFrom() != null ? changeRequest.getEffectiveFrom().toString() : null);
         dto.setEffectiveUntil(changeRequest.getEffectiveUntil() != null ? changeRequest.getEffectiveUntil().toString() : null);
+        dto.setDesiredStartDate(changeRequest.getDesiredStartDate() != null ? changeRequest.getDesiredStartDate().toString() : null);
+        dto.setDesiredEndDate(changeRequest.getDesiredEndDate() != null ? changeRequest.getDesiredEndDate().toString() : null);
+        dto.setExpectedExtraCost(changeRequest.getExpectedExtraCost() != null ? changeRequest.getExpectedExtraCost().doubleValue() : null);
         dto.setReferences(references);
         dto.setStatus(changeRequest.getStatus());
         dto.setCreatedBy(createdBy);
@@ -2062,13 +2206,12 @@ public class SalesSOWContractService {
             changeRequest.setSummary(request.getSummary());
             changeRequest.setDescription(request.getSummary());
         }
-        if (isRetainer) {
+        // Update effectiveFrom and effectiveUntil for both Retainer and Fixed Price when status is Processing
             if (request.getEffectiveFrom() != null && !request.getEffectiveFrom().trim().isEmpty()) {
                 changeRequest.setEffectiveFrom(LocalDate.parse(request.getEffectiveFrom()));
             }
             if (request.getEffectiveUntil() != null && !request.getEffectiveUntil().trim().isEmpty()) {
                 changeRequest.setEffectiveUntil(LocalDate.parse(request.getEffectiveUntil()));
-            }
         }
         if (request.getReferences() != null) {
             List<String> evidenceList = new ArrayList<>();
@@ -2085,6 +2228,7 @@ public class SalesSOWContractService {
         }
         
         // Calculate total amount based on engagement type
+        boolean isClientUser = "CLIENT".equalsIgnoreCase(currentUser.getRole()) || "CLIENT_USER".equalsIgnoreCase(currentUser.getRole());
         BigDecimal totalAmount = BigDecimal.ZERO;
         if (isRetainer) {
             if (request.getBillingDetails() != null && !request.getBillingDetails().isEmpty()) {
@@ -2094,14 +2238,20 @@ public class SalesSOWContractService {
                     }
                 }
             }
+            changeRequest.setCostEstimatedByLandbridge(totalAmount); // Billing Adjustments total
         } else if (isFixedPrice) {
             if (request.getImpactAnalysis() != null && request.getImpactAnalysis().getAdditionalCost() != null) {
                 totalAmount = BigDecimal.valueOf(request.getImpactAnalysis().getAdditionalCost());
             }
         }
         changeRequest.setAmount(totalAmount);
+        // ExpectedExtraCost chỉ set khi client tạo CR; Sales Rep không cập nhật trường này
+        if (isClientUser) {
         changeRequest.setExpectedExtraCost(totalAmount);
+        }
+        if (!isRetainer) {
         changeRequest.setCostEstimatedByLandbridge(totalAmount);
+        }
         
         // Update impact analysis fields for Fixed Price
         if (isFixedPrice && request.getImpactAnalysis() != null) {
